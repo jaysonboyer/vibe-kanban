@@ -109,11 +109,11 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,
-    port: parseInt(process.env.FRONTEND_PORT || '3000'),
+    port: parseInt(process.env.FRONTEND_PORT || "3000"),
+    host: process.env.VITE_HOST || "localhost",
     proxy: {
-      '/api': {
-        target: `http://localhost:${process.env.BACKEND_PORT || '3001'}`,
+      "/api": {
+        target: process.env.VITE_BACKEND_URL || `http://localhost:${process.env.BACKEND_PORT || "3001"}`,
         changeOrigin: true,
         ws: true,
       },
