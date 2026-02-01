@@ -127,6 +127,18 @@ git push -u origin my-feature
 
 #### Updating Your Fork from Upstream
 
+**Quick Method (Claude Code Skill):**
+
+If you have Claude Code installed, use the automated sync skill:
+
+```bash
+/sync-fork
+```
+
+This skill will guide you through the sync process, handle conflicts, and provide status updates.
+
+**Manual Method:**
+
 To sync your fork with the latest changes from BloopAI/vibe-kanban:
 
 ```bash
