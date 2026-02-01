@@ -1,9 +1,9 @@
 ---
-name: sync-fork
-description: Sync fork (jaysonboyer/vibe-kanban) with upstream parent (BloopAI/vibe-kanban). Use when the user wants to update their fork with latest changes from upstream, sync with parent repository, pull upstream changes, or rebase/merge from BloopAI/vibe-kanban.
+name: sync-vibe-kanban-fork
+description: Sync the jaysonboyer/vibe-kanban fork with upstream parent (BloopAI/vibe-kanban). Use when the user wants to update the vibe-kanban fork with latest changes from upstream, sync with parent repository, pull upstream changes, or rebase/merge from BloopAI/vibe-kanban. Only works in the vibe-kanban repository.
 ---
 
-# Sync Fork with Upstream
+# Sync Vibe Kanban Fork with Upstream
 
 Synchronize the fork (jaysonboyer/vibe-kanban) with the upstream parent repository (BloopAI/vibe-kanban).
 

@@ -129,10 +129,13 @@ git push -u origin my-feature
 
 **Quick Method (Claude Code Skill):**
 
-This repository includes a Claude Code skill (`sync-fork/`) that automates the fork sync process. To use it:
+This repository includes a Claude Code skill that automates the fork sync process. To use it:
 
-1. Install the skill: `cp sync-fork.skill ~/.claude/` (or install via Claude Code)
-2. Run: `/sync-fork`
+1. Install the skill by copying it to your global skills directory:
+   ```bash
+   cp -r .claude/skills/sync-fork ~/.claude/skills/sync-vibe-kanban-fork
+   ```
+2. Run: `/sync-vibe-kanban-fork`
 
 The skill will guide you through the sync process, handle conflicts, and provide status updates.
 
