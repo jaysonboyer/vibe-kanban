@@ -90,10 +90,77 @@ cd frontend
 pnpm build
 ```
 
-### Build from source (macOS)
+### Build and Install from Source
 
-1. Run `./local-build.sh`
-2. Test with `cd npx-cli && node bin/cli.js`
+These instructions allow you to build and install vibe-kanban from your local repository or fork.
+
+#### Prerequisites
+
+Ensure you have the following installed:
+
+- [Node.js](https://nodejs.org/) (>=18)
+- [pnpm](https://pnpm.io/) (>=8)
+- [Rust](https://rustup.rs/) (latest stable)
+
+To check if Rust is installed:
+```bash
+cargo --version
+```
+
+If not installed, install Rust:
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+```
+
+#### Build the Binaries
+
+1. Install dependencies:
+   ```bash
+   pnpm i
+   ```
+
+2. Build all binaries (frontend + Rust):
+   ```bash
+   pnpm run build:npx
+   ```
+
+   This will:
+   - Build the frontend (React + TypeScript)
+   - Compile Rust binaries (server, MCP server, review CLI)
+   - Package them in `npx-cli/dist/`
+
+#### Test Locally (Optional)
+
+Test the build without installing globally:
+```bash
+cd npx-cli && node bin/cli.js
+```
+
+#### Install Globally
+
+Install the built package globally to use `vibe-kanban` from anywhere:
+
+```bash
+npm install -g .
+```
+
+Verify the installation:
+```bash
+which vibe-kanban
+vibe-kanban --version
+```
+
+You can now run `vibe-kanban` from any directory.
+
+#### Updating Your Installation
+
+After making changes to the code, rebuild and reinstall:
+
+```bash
+pnpm run build:npx
+npm install -g .
+```
 
 ### Working with the Fork
 
