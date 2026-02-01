@@ -129,13 +129,12 @@ git push -u origin my-feature
 
 **Quick Method (Claude Code Skill):**
 
-If you have Claude Code installed, use the automated sync skill:
+This repository includes a Claude Code skill (`sync-fork/`) that automates the fork sync process. To use it:
 
-```bash
-/sync-fork
-```
+1. Install the skill: `cp sync-fork.skill ~/.claude/` (or install via Claude Code)
+2. Run: `/sync-fork`
 
-This skill will guide you through the sync process, handle conflicts, and provide status updates.
+The skill will guide you through the sync process, handle conflicts, and provide status updates.
 
 **Manual Method:**
 
