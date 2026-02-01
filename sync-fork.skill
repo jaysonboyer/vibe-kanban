@@ -1,0 +1,227 @@
+---
+name: sync-fork
+description: Sync your fork (jaysonboyer/vibe-kanban) with upstream (BloopAI/vibe-kanban)
+version: 1.0.0
+author: Claude
+---
+
+# Sync Fork with Upstream
+
+You are helping the user synchronize their fork (jaysonboyer/vibe-kanban) with the upstream parent repository (BloopAI/vibe-kanban).
+
+## Context
+
+This repository is a fork of BloopAI/vibe-kanban. The remotes should be configured as:
+- `origin`: git@github.com:jaysonboyer/vibe-kanban.git (the fork)
+- `upstream`: https://github.com/BloopAI/vibe-kanban.git (the parent)
+
+## Your Task
+
+Follow these steps to sync the fork:
+
+### 1. Verify Current State
+
+First, check the current state of the repository:
+
+```bash
+# Check current branch
+git branch --show-current
+
+# Check for uncommitted changes
+git status
+
+# Verify remote configuration
+git remote -v
+```
+
+**Requirements:**
+- Must be on a clean working directory (no uncommitted changes)
+- Both `origin` and `upstream` remotes must be configured
+- If remotes are missing, help set them up
+
+### 2. Ask User for Sync Strategy
+
+Before proceeding, ask the user which strategy they prefer:
+
+**Merge (Recommended for beginners)**
+- Preserves complete history
+- Creates merge commits
+- Safer, easier to undo
+- Command: `git merge upstream/main`
+
+**Rebase (For linear history)**
+- Creates clean, linear history
+- Replays commits on top of upstream
+- Requires more care with conflicts
+- Command: `git rebase upstream/main`
+
+Use the AskUserQuestion tool to let them choose.
+
+### 3. Handle Uncommitted Changes
+
+If there are uncommitted changes:
+- Offer to stash them: `git stash push -m "Auto-stash before fork sync"`
+- Or ask user to commit them first
+- Note: You'll reapply stashed changes after sync
+
+### 4. Fetch Upstream Changes
+
+```bash
+# Fetch the latest from upstream
+git fetch upstream
+
+# Show what's new
+git log --oneline main..upstream/main
+```
+
+Inform the user about:
+- Number of commits ahead/behind
+- Brief summary of changes (from commit messages)
+
+### 5. Switch to Main Branch
+
+If not already on main:
+```bash
+git checkout main
+```
+
+### 6. Perform the Sync
+
+**For Merge Strategy:**
+```bash
+git merge upstream/main
+```
+
+**For Rebase Strategy:**
+```bash
+git rebase upstream/main
+```
+
+### 7. Handle Conflicts (if any)
+
+If conflicts occur:
+
+1. List the conflicted files:
+   ```bash
+   git status
+   ```
+
+2. Inform the user clearly:
+   - Which files have conflicts
+   - They need to manually resolve them
+   - How to continue after resolving
+
+3. Provide guidance:
+   ```
+   To resolve conflicts:
+   1. Open the conflicted files and resolve the markers (<<<<<<, ======, >>>>>>)
+   2. Stage the resolved files: git add <file>
+   3. Continue: git merge --continue (or git rebase --continue)
+
+   To abort: git merge --abort (or git rebase --abort)
+   ```
+
+4. Wait for user to resolve conflicts before proceeding
+
+### 8. Push to Fork
+
+Once sync is successful:
+
+```bash
+# Push to your fork
+git push origin main
+```
+
+**Note:** Never use `--force` on main branch unless explicitly requested and understood by the user.
+
+### 9. Restore Stashed Changes (if applicable)
+
+If you stashed changes earlier:
+```bash
+git stash pop
+```
+
+Handle any conflicts from stash application.
+
+### 10. Report Summary
+
+Provide a clear summary:
+- ✅ Number of commits synced
+- 📝 List of major changes (from commit messages)
+- 🔄 Current status (up to date, ahead, behind)
+- 💡 Next steps (if any feature branches need rebasing)
+
+## Error Handling
+
+### Remote Not Configured
+
+If `upstream` remote is missing:
+```bash
+git remote add upstream https://github.com/BloopAI/vibe-kanban.git
+git fetch upstream
+```
+
+If `origin` points to wrong repository:
+```bash
+git remote set-url origin git@github.com:jaysonboyer/vibe-kanban.git
+```
+
+### Diverged Branches
+
+If main has local commits not in upstream:
+- Merge strategy: Will create merge commit (safe)
+- Rebase strategy: Will replay commits (may have conflicts)
+
+Warn the user about this situation before proceeding.
+
+### Network Issues
+
+If fetch fails:
+- Check internet connection
+- Verify GitHub access (SSH keys, tokens)
+- Try HTTPS URL for upstream if SSH fails
+
+## Safety Checks
+
+Before any destructive operations:
+1. ✅ Verify working directory is clean OR changes are stashed
+2. ✅ Confirm remotes are correctly configured
+3. ✅ Explain what will happen based on chosen strategy
+4. ✅ Never force-push to main without explicit confirmation
+
+## Post-Sync Recommendations
+
+After successful sync, inform the user:
+
+1. **Update Feature Branches** (if any exist):
+   ```bash
+   git checkout feature-branch
+   git rebase main
+   ```
+
+2. **Check CI/CD**: If applicable, mention that CI might run on the updated main
+
+3. **Review Changes**: Suggest reviewing major changes:
+   ```bash
+   git log --oneline -10
+   git diff HEAD~5..HEAD
+   ```
+
+## Example Interaction
+
+```
+User: /sync-fork
+Assistant: I'll help you sync your fork. Let me check the current state of the repository first.
+
+[Runs git remote -v, git status, git branch checks]
+
+I see your remotes are configured correctly. Would you like to use merge or rebase strategy for syncing?
+
+User: Use merge
+
+Assistant: I'll use the merge strategy. Fetching latest changes from upstream...
+
+[Executes the sync process following the steps above]
+
+✅ Successfully synced\! Your fork is now up to date with upstream.
+```
