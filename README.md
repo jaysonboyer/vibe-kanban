@@ -95,6 +95,91 @@ pnpm build
 1. Run `./local-build.sh`
 2. Test with `cd npx-cli && node bin/cli.js`
 
+### Working with the Fork
+
+This repository is a fork of [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban). Here's how to manage the fork relationship:
+
+#### Initial Setup
+
+Set up your remotes (if not already configured):
+
+```bash
+# Your fork (should already be set as origin)
+git remote add origin git@github.com:jaysonboyer/vibe-kanban.git
+
+# Upstream (the original BloopAI repository)
+git remote add upstream https://github.com/BloopAI/vibe-kanban.git
+
+# Verify remotes
+git remote -v
+```
+
+#### Pushing to Your Fork
+
+```bash
+# Push to your fork's main branch
+git push origin main
+
+# Push a feature branch
+git checkout -b my-feature
+git push -u origin my-feature
+```
+
+#### Updating Your Fork from Upstream
+
+To sync your fork with the latest changes from BloopAI/vibe-kanban:
+
+```bash
+# Fetch the latest changes from upstream
+git fetch upstream
+
+# Switch to your main branch
+git checkout main
+
+# Merge upstream changes into your main branch
+git merge upstream/main
+
+# Push the updates to your fork
+git push origin main
+```
+
+Alternatively, use rebase to maintain a linear history:
+
+```bash
+git fetch upstream
+git checkout main
+git rebase upstream/main
+git push origin main --force-with-lease
+```
+
+#### Creating Pull Requests
+
+**To your own fork (jaysonboyer/vibe-kanban):**
+```bash
+git checkout -b my-feature
+# Make changes and commit
+git push -u origin my-feature
+gh pr create --base main --head my-feature
+```
+
+**To upstream (BloopAI/vibe-kanban):**
+```bash
+git checkout -b my-feature
+# Make changes and commit
+git push -u origin my-feature
+gh pr create --repo BloopAI/vibe-kanban --base main --head jaysonboyer:my-feature
+```
+
+#### Syncing Feature Branches
+
+If you need to update a feature branch with the latest upstream changes:
+
+```bash
+git checkout my-feature
+git fetch upstream
+git rebase upstream/main
+git push origin my-feature --force-with-lease
+```
 
 ### Environment Variables
 
