@@ -1,24 +1,29 @@
+import { useContext, useMemo, useCallback, type ReactNode } from 'react';
+import { createHmrContext } from '@/lib/hmrContext.ts';
 import {
-  createContext,
-  useContext,
-  useMemo,
-  useCallback,
-  type ReactNode,
-} from 'react';
-import {
-  useEntity,
+  useShape,
   type InsertResult,
   type MutationResult,
 } from '@/lib/electric/hooks';
 import {
-  ISSUE_ENTITY,
-  PROJECT_STATUS_ENTITY,
-  TAG_ENTITY,
-  ISSUE_ASSIGNEE_ENTITY,
-  ISSUE_FOLLOWER_ENTITY,
-  ISSUE_TAG_ENTITY,
-  ISSUE_RELATIONSHIP_ENTITY,
-  PULL_REQUEST_ENTITY,
+  PROJECT_ISSUES_SHAPE,
+  PROJECT_PROJECT_STATUSES_SHAPE,
+  PROJECT_TAGS_SHAPE,
+  PROJECT_ISSUE_ASSIGNEES_SHAPE,
+  PROJECT_ISSUE_FOLLOWERS_SHAPE,
+  PROJECT_ISSUE_TAGS_SHAPE,
+  PROJECT_ISSUE_RELATIONSHIPS_SHAPE,
+  PROJECT_PULL_REQUESTS_SHAPE,
+  PROJECT_WORKSPACES_SHAPE,
+  PROJECT_BLOBS_SHAPE,
+  PROJECT_ATTACHMENTS_SHAPE,
+  ISSUE_MUTATION,
+  PROJECT_STATUS_MUTATION,
+  TAG_MUTATION,
+  ISSUE_ASSIGNEE_MUTATION,
+  ISSUE_FOLLOWER_MUTATION,
+  ISSUE_TAG_MUTATION,
+  ISSUE_RELATIONSHIP_MUTATION,
   type Issue,
   type ProjectStatus,
   type Tag,
@@ -27,6 +32,9 @@ import {
   type IssueTag,
   type IssueRelationship,
   type PullRequest,
+  type Workspace,
+  type Blob as RemoteBlob,
+  type Attachment,
   type CreateIssueRequest,
   type UpdateIssueRequest,
   type CreateProjectStatusRequest,
@@ -52,8 +60,9 @@ import type { SyncError } from '@/lib/electric/types';
  * - IssueTags (data + mutations)
  * - IssueRelationships (data + mutations)
  * - PullRequests (data only)
- *
- * Note: Workspaces are user-scoped and provided by UserContext.
+ * - Workspaces (data only)
+ * - Blobs (data only)
+ * - Attachments (data only)
  */
 export interface ProjectContextValue {
   projectId: string;
@@ -67,6 +76,9 @@ export interface ProjectContextValue {
   issueTags: IssueTag[];
   issueRelationships: IssueRelationship[];
   pullRequests: PullRequest[];
+  workspaces: Workspace[];
+  blobs: RemoteBlob[];
+  attachments: Attachment[];
 
   // Loading/error state
   isLoading: boolean;
@@ -129,6 +141,10 @@ export interface ProjectContextValue {
   getStatus: (statusId: string) => ProjectStatus | undefined;
   getTag: (tagId: string) => Tag | undefined;
   getPullRequestsForIssue: (issueId: string) => PullRequest[];
+  getWorkspacesForIssue: (issueId: string) => Workspace[];
+  getAttachmentsForIssue: (issueId: string) => Attachment[];
+  getAttachmentsForComment: (commentId: string) => Attachment[];
+  getBlobForAttachment: (attachment: Attachment) => RemoteBlob | undefined;
 
   // Computed aggregations (Maps for O(1) lookup)
   issuesById: Map<string, Issue>;
@@ -136,7 +152,10 @@ export interface ProjectContextValue {
   tagsById: Map<string, Tag>;
 }
 
-const ProjectContext = createContext<ProjectContextValue | null>(null);
+const ProjectContext = createHmrContext<ProjectContextValue | null>(
+  'RemoteProjectContext',
+  null
+);
 
 interface ProjectProviderProps {
   projectId: string;
@@ -147,36 +166,50 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
   const params = useMemo(() => ({ project_id: projectId }), [projectId]);
   const enabled = Boolean(projectId);
 
-  // Entity subscriptions
-  const issuesResult = useEntity(ISSUE_ENTITY, params, { enabled });
-  const statusesResult = useEntity(PROJECT_STATUS_ENTITY, params, { enabled });
-  const tagsResult = useEntity(TAG_ENTITY, params, { enabled });
-  const issueAssigneesResult = useEntity(ISSUE_ASSIGNEE_ENTITY, params, {
+  // Shape subscriptions (with mutations where needed)
+  const issuesResult = useShape(PROJECT_ISSUES_SHAPE, params, {
     enabled,
+    mutation: ISSUE_MUTATION,
   });
-  const issueFollowersResult = useEntity(ISSUE_FOLLOWER_ENTITY, params, {
+  const statusesResult = useShape(PROJECT_PROJECT_STATUSES_SHAPE, params, {
     enabled,
+    mutation: PROJECT_STATUS_MUTATION,
   });
-  const issueTagsResult = useEntity(ISSUE_TAG_ENTITY, params, { enabled });
-  const issueRelationshipsResult = useEntity(
-    ISSUE_RELATIONSHIP_ENTITY,
+  const tagsResult = useShape(PROJECT_TAGS_SHAPE, params, {
+    enabled,
+    mutation: TAG_MUTATION,
+  });
+  const issueAssigneesResult = useShape(PROJECT_ISSUE_ASSIGNEES_SHAPE, params, {
+    enabled,
+    mutation: ISSUE_ASSIGNEE_MUTATION,
+  });
+  const issueFollowersResult = useShape(PROJECT_ISSUE_FOLLOWERS_SHAPE, params, {
+    enabled,
+    mutation: ISSUE_FOLLOWER_MUTATION,
+  });
+  const issueTagsResult = useShape(PROJECT_ISSUE_TAGS_SHAPE, params, {
+    enabled,
+    mutation: ISSUE_TAG_MUTATION,
+  });
+  const issueRelationshipsResult = useShape(
+    PROJECT_ISSUE_RELATIONSHIPS_SHAPE,
     params,
-    { enabled }
+    { enabled, mutation: ISSUE_RELATIONSHIP_MUTATION }
   );
-  const pullRequestsResult = useEntity(PULL_REQUEST_ENTITY, params, {
+  const pullRequestsResult = useShape(PROJECT_PULL_REQUESTS_SHAPE, params, {
+    enabled,
+  });
+  const workspacesResult = useShape(PROJECT_WORKSPACES_SHAPE, params, {
+    enabled,
+  });
+  const blobsResult = useShape(PROJECT_BLOBS_SHAPE, params, { enabled });
+  const attachmentsResult = useShape(PROJECT_ATTACHMENTS_SHAPE, params, {
     enabled,
   });
 
-  // Combined loading state
-  const isLoading =
-    issuesResult.isLoading ||
-    statusesResult.isLoading ||
-    tagsResult.isLoading ||
-    issueAssigneesResult.isLoading ||
-    issueFollowersResult.isLoading ||
-    issueTagsResult.isLoading ||
-    issueRelationshipsResult.isLoading ||
-    pullRequestsResult.isLoading;
+  // Board readiness depends on core kanban data only.
+  // Other project-scoped shapes hydrate opportunistically after render.
+  const isLoading = issuesResult.isLoading || statusesResult.isLoading;
 
   // First error found
   const error =
@@ -188,6 +221,9 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
     issueTagsResult.error ||
     issueRelationshipsResult.error ||
     pullRequestsResult.error ||
+    workspacesResult.error ||
+    blobsResult.error ||
+    attachmentsResult.error ||
     null;
 
   // Combined retry
@@ -200,6 +236,9 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
     issueTagsResult.retry();
     issueRelationshipsResult.retry();
     pullRequestsResult.retry();
+    workspacesResult.retry();
+    blobsResult.retry();
+    attachmentsResult.retry();
   }, [
     issuesResult,
     statusesResult,
@@ -209,6 +248,9 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
     issueTagsResult,
     issueRelationshipsResult,
     pullRequestsResult,
+    workspacesResult,
+    blobsResult,
+    attachmentsResult,
   ]);
 
   // Computed Maps for O(1) lookup
@@ -280,7 +322,9 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
 
   const getRelationshipsForIssue = useCallback(
     (issueId: string) =>
-      issueRelationshipsResult.data.filter((r) => r.issue_id === issueId),
+      issueRelationshipsResult.data.filter(
+        (r) => r.issue_id === issueId || r.related_issue_id === issueId
+      ),
     [issueRelationshipsResult.data]
   );
 
@@ -300,6 +344,37 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
     [pullRequestsResult.data]
   );
 
+  const getWorkspacesForIssue = useCallback(
+    (issueId: string) =>
+      workspacesResult.data.filter((w) => w.issue_id === issueId),
+    [workspacesResult.data]
+  );
+
+  const blobsById = useMemo(() => {
+    const map = new Map<string, RemoteBlob>();
+    for (const blob of blobsResult.data) {
+      map.set(blob.id, blob);
+    }
+    return map;
+  }, [blobsResult.data]);
+
+  const getAttachmentsForIssue = useCallback(
+    (issueId: string) =>
+      attachmentsResult.data.filter((a) => a.issue_id === issueId),
+    [attachmentsResult.data]
+  );
+
+  const getAttachmentsForComment = useCallback(
+    (commentId: string) =>
+      attachmentsResult.data.filter((a) => a.comment_id === commentId),
+    [attachmentsResult.data]
+  );
+
+  const getBlobForAttachment = useCallback(
+    (attachment: Attachment) => blobsById.get(attachment.blob_id),
+    [blobsById]
+  );
+
   const value = useMemo<ProjectContextValue>(
     () => ({
       projectId,
@@ -313,6 +388,9 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
       issueTags: issueTagsResult.data,
       issueRelationships: issueRelationshipsResult.data,
       pullRequests: pullRequestsResult.data,
+      workspaces: workspacesResult.data,
+      blobs: blobsResult.data,
+      attachments: attachmentsResult.data,
 
       // Loading/error
       isLoading,
@@ -361,6 +439,10 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
       getStatus,
       getTag,
       getPullRequestsForIssue,
+      getWorkspacesForIssue,
+      getAttachmentsForIssue,
+      getAttachmentsForComment,
+      getBlobForAttachment,
 
       // Computed aggregations
       issuesById,
@@ -377,6 +459,9 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
       issueTagsResult,
       issueRelationshipsResult,
       pullRequestsResult,
+      workspacesResult,
+      blobsResult,
+      attachmentsResult,
       isLoading,
       error,
       retry,
@@ -390,6 +475,10 @@ export function ProjectProvider({ projectId, children }: ProjectProviderProps) {
       getStatus,
       getTag,
       getPullRequestsForIssue,
+      getWorkspacesForIssue,
+      getAttachmentsForIssue,
+      getAttachmentsForComment,
+      getBlobForAttachment,
       issuesById,
       statusesById,
       tagsById,

@@ -17,6 +17,7 @@ import {
 } from '@/stores/useUiPreferencesStore';
 import DisplayConversationEntry from '@/components/NormalizedConversation/DisplayConversationEntry';
 import { useMessageEditContext } from '@/contexts/MessageEditContext';
+import type { UseResetProcessResult } from '@/components/ui-new/hooks/useResetProcess';
 import { useChangesView } from '@/contexts/ChangesViewContext';
 import { useLogsPanel } from '@/contexts/LogsPanelContext';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
@@ -38,10 +39,12 @@ import { ChatScriptEntry } from '../primitives/conversation/ChatScriptEntry';
 import { ChatSubagentEntry } from '../primitives/conversation/ChatSubagentEntry';
 import { ChatAggregatedToolEntries } from '../primitives/conversation/ChatAggregatedToolEntries';
 import { ChatAggregatedDiffEntries } from '../primitives/conversation/ChatAggregatedDiffEntries';
+import { ChatCollapsedThinking } from '../primitives/conversation/ChatCollapsedThinking';
 import type { DiffInput } from '../primitives/conversation/PierreConversationDiff';
 import type {
   AggregatedPatchGroup,
   AggregatedDiffGroup,
+  AggregatedThinkingGroup,
 } from '@/hooks/useConversationHistory/types';
 import {
   FileTextIcon,
@@ -53,9 +56,11 @@ type Props = {
   expansionKey: string;
   executionProcessId: string;
   taskAttempt: WorkspaceWithSession;
+  resetAction: UseResetProcessResult;
   entry: NormalizedEntry | null;
   aggregatedGroup: AggregatedPatchGroup | null;
   aggregatedDiffGroup: AggregatedDiffGroup | null;
+  aggregatedThinkingGroup: AggregatedThinkingGroup | null;
 };
 
 type FileEditAction = Extract<ActionType, { action: 'file_edit' }>;
@@ -264,9 +269,11 @@ function NewDisplayConversationEntry(props: Props) {
     entry,
     aggregatedGroup,
     aggregatedDiffGroup,
+    aggregatedThinkingGroup,
     expansionKey,
     executionProcessId,
     taskAttempt,
+    resetAction,
   } = props;
 
   // Handle aggregated groups (consecutive file_read or search entries)
@@ -277,6 +284,16 @@ function NewDisplayConversationEntry(props: Props) {
   // Handle aggregated diff groups (consecutive file_edit entries for same file)
   if (aggregatedDiffGroup) {
     return <AggregatedDiffGroupEntry group={aggregatedDiffGroup} />;
+  }
+
+  // Handle aggregated thinking groups (thinking entries in previous turns)
+  if (aggregatedThinkingGroup) {
+    return (
+      <AggregatedThinkingGroupEntry
+        group={aggregatedThinkingGroup}
+        taskAttemptId={taskAttempt?.id}
+      />
+    );
   }
 
   // If no entry, return null (shouldn't happen in normal usage)
@@ -297,6 +314,7 @@ function NewDisplayConversationEntry(props: Props) {
           expansionKey={expansionKey}
           workspaceId={taskAttempt?.id}
           executionProcessId={executionProcessId}
+          resetAction={resetAction}
         />
       );
 
@@ -520,25 +538,36 @@ function UserMessageEntry({
   expansionKey,
   workspaceId,
   executionProcessId,
+  resetAction,
 }: {
   content: string;
   expansionKey: string;
   workspaceId: string | undefined;
   executionProcessId: string | undefined;
+  resetAction: UseResetProcessResult;
 }) {
   const [expanded, toggle] = usePersistedExpanded(`user:${expansionKey}`, true);
   const { startEdit, isEntryGreyed, isInEditMode } = useMessageEditContext();
+  const { resetProcess, canResetProcess, isResetPending } = resetAction;
 
   const isGreyed = isEntryGreyed(expansionKey);
 
-  const handleEdit = useCallback(() => {
+  const handleEdit = () => {
     if (executionProcessId) {
       startEdit(expansionKey, executionProcessId, content);
     }
-  }, [startEdit, expansionKey, executionProcessId, content]);
+  };
+
+  const handleReset = () => {
+    if (executionProcessId) {
+      resetProcess(executionProcessId);
+    }
+  };
 
   // Only show edit button if we have a process ID and not already in edit mode
-  const canEdit = !!executionProcessId && !isInEditMode;
+  const canEdit = !!executionProcessId && !isInEditMode && !isResetPending;
+  // Only show reset if we have a process ID, not in edit mode, not pending, and not first process
+  const canReset = canEdit && canResetProcess(executionProcessId);
 
   return (
     <ChatUserMessage
@@ -547,6 +576,7 @@ function UserMessageEntry({
       onToggle={toggle}
       workspaceId={workspaceId}
       onEdit={canEdit ? handleEdit : undefined}
+      onReset={canReset ? handleReset : undefined}
       isGreyed={isGreyed}
     />
   );
@@ -889,6 +919,49 @@ function AggregatedGroupEntry({ group }: { group: AggregatedPatchGroup }) {
 }
 
 /**
+ * Aggregated thinking group entry for thinking entries in previous turns
+ */
+function AggregatedThinkingGroupEntry({
+  group,
+  taskAttemptId,
+}: {
+  group: AggregatedThinkingGroup;
+  taskAttemptId: string | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Extract thinking entries from the group
+  const thinkingEntries = useMemo(() => {
+    return group.entries
+      .filter((entry) => entry.type === 'NORMALIZED_ENTRY')
+      .map((entry) => ({
+        content: entry.type === 'NORMALIZED_ENTRY' ? entry.content.content : '',
+        expansionKey: entry.patchKey,
+      }));
+  }, [group.entries]);
+
+  const handleToggle = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
+
+  const handleHoverChange = useCallback((hovered: boolean) => {
+    setIsHovered(hovered);
+  }, []);
+
+  return (
+    <ChatCollapsedThinking
+      entries={thinkingEntries}
+      expanded={expanded}
+      isHovered={isHovered}
+      onToggle={handleToggle}
+      onHoverChange={handleHoverChange}
+      taskAttemptId={taskAttemptId}
+    />
+  );
+}
+
+/**
  * Aggregated diff group entry for consecutive file_edit entries on the same file
  */
 function AggregatedDiffGroupEntry({ group }: { group: AggregatedDiffGroup }) {
@@ -956,7 +1029,7 @@ const NewDisplayConversationEntrySpaced = (props: Props) => {
   return (
     <div
       className={cn(
-        'my-base px-double',
+        'py-base px-double',
         isGreyed && 'opacity-50 pointer-events-none'
       )}
     >

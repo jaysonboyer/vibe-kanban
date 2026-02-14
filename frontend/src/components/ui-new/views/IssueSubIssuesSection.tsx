@@ -24,6 +24,10 @@ export interface IssueSubIssuesSectionProps {
   parentIssueId: string;
   subIssues: SubIssueData[];
   onSubIssueClick: (issueId: string) => void;
+  onSubIssueMarkIndependent?: (subIssueId: string) => void;
+  onSubIssueDelete?: (subIssueId: string) => void;
+  onSubIssuePriorityClick?: (subIssueId: string) => void;
+  onSubIssueAssigneeClick?: (subIssueId: string) => void;
   isLoading?: boolean;
   isReordering?: boolean;
   actions?: SectionAction[];
@@ -33,6 +37,10 @@ export function IssueSubIssuesSection({
   parentIssueId,
   subIssues,
   onSubIssueClick,
+  onSubIssueMarkIndependent,
+  onSubIssueDelete,
+  onSubIssuePriorityClick,
+  onSubIssueAssigneeClick,
   isLoading,
   isReordering,
   actions,
@@ -79,6 +87,38 @@ export function IssueSubIssuesSection({
                   assignees={subIssue.assignees}
                   createdAt={subIssue.createdAt}
                   onClick={() => onSubIssueClick(subIssue.id)}
+                  onMarkIndependentClick={
+                    onSubIssueMarkIndependent
+                      ? (e) => {
+                          e.stopPropagation();
+                          onSubIssueMarkIndependent(subIssue.id);
+                        }
+                      : undefined
+                  }
+                  onDeleteClick={
+                    onSubIssueDelete
+                      ? (e) => {
+                          e.stopPropagation();
+                          onSubIssueDelete(subIssue.id);
+                        }
+                      : undefined
+                  }
+                  onPriorityClick={
+                    onSubIssuePriorityClick
+                      ? (e) => {
+                          e.stopPropagation();
+                          onSubIssuePriorityClick(subIssue.id);
+                        }
+                      : undefined
+                  }
+                  onAssigneeClick={
+                    onSubIssueAssigneeClick
+                      ? (e) => {
+                          e.stopPropagation();
+                          onSubIssueAssigneeClick(subIssue.id);
+                        }
+                      : undefined
+                  }
                 />
               ))
             )}

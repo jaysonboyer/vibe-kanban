@@ -1,4 +1,7 @@
 {
+  "editorNames": {
+    "custom": "カスタム"
+  },
   "folderPicker": {
     "legend": "フォルダ名をクリックして移動 • アクションボタンで選択",
     "manualPathLabel": "パスを手動入力:",
@@ -60,6 +63,7 @@
     "taskCompleted": "タスク完了",
     "ran": "実行",
     "tool": "ツール",
+    "thinking": "思考中",
     "toolSummary": {
       "read": "{{path}} を読み込み",
       "searched": "「{{query}}」を検索",
@@ -153,6 +157,7 @@
     "backToActive": "アクティブに戻る",
     "noArchived": "アーカイブされたワークスペースはありません",
     "noWorkspaces": "ワークスペースがありません",
+    "newWorkspace": "新しいワークスペース",
     "needsAttention": "対応が必要",
     "idle": "待機中",
     "running": "実行中",
@@ -176,7 +181,13 @@
     "deleteConfirmMessage": "このワークスペースを削除してもよろしいですか？これにより課題からのリンクが解除され、ローカルワークスペースが削除されます。この操作は元に戻せません。",
     "unlinkError": "ワークスペースのリンク解除に失敗しました",
     "deleteError": "ワークスペースの削除に失敗しました",
-    "filesChanged": "{{count}}ファイル"
+    "filesChanged": "{{count}}ファイル",
+    "deleteDialog": {
+      "title": "ワークスペースを削除",
+      "description": "このワークスペースを削除してもよろしいですか？この操作は元に戻せません。",
+      "deleteBranchLabel": "ブランチを削除",
+      "cannotDeleteOpenPr": "PRがオープン中はブランチを削除できません"
+    }
   },
   "fileTree": {
     "searchPlaceholder": "ファイルを検索...",
@@ -245,7 +256,9 @@
   "commandBar": {
     "noResults": "結果が見つかりません。",
     "back": "戻る",
-    "defaultPlaceholder": "コマンドを入力または検索..."
+    "defaultPlaceholder": "コマンドを入力または検索...",
+    "selectBranch": "Select Branch",
+    "selectBranchFor": "Select Branch for {{repoName}}"
   },
   "chatBox": {
     "variants": "バリアント",
@@ -343,6 +356,9 @@
     "tags": "タグ",
     "files": "ファイル",
     "commands": "コマンド",
+    "chooseRepo": "リポジトリを選択",
+    "selectedRepo": "選択中のリポジトリ: {{repoName}}",
+    "missingRepo": "選択したリポジトリは利用できなくなりました。",
     "noTagsOrFiles": "タグまたはファイルが見つかりません",
     "noCommands": "このエージェントで利用可能なコマンドはありません。"
   },
@@ -359,12 +375,51 @@
     "selectColorFor": "色を選択:",
     "createTag": "作成",
     "filesCount": "{{count}}ファイル",
+    "attachmentsTitle": "添付ファイル ({{count}})",
+    "deleteAttachmentAria": "{{filename}} を削除",
     "noPrCreated": "PRが作成されていません",
     "noCommentsYet": "コメントはまだありません",
+    "createdBy": "作成者",
     "comments": "コメント",
     "enterCommentPlaceholder": "コメントを入力してください...",
+    "attachImage": "画像を添付",
+    "attachFile": "ファイルを添付",
+    "attachFileHint": "ファイルを添付（1ファイル最大20MB）",
+    "attach": "添付",
+    "dropImagesHere": "ここに画像をドロップ",
+    "dropFilesHere": "ここにファイルをドロップ",
+    "imageDropHint": "PNG、JPG、GIF、最大20MB",
+    "fileDropHint": "任意のファイル形式、最大20MB",
+    "unknownFile": "不明なファイル",
+    "unknownUser": "不明なユーザー",
+    "deletedUser": "削除済みユーザー",
+    "replyQuotePrefix": "が書きました:",
+    "moreActions": "その他の操作",
+    "closePanel": "パネルを閉じる",
+    "issueTitlePlaceholder": "課題タイトル...",
+    "issueDescriptionPlaceholder": "タスクの説明を入力してください...",
+    "createDraftWorkspaceImmediately": "下書きワークスペースをすぐに作成",
+    "createDraftWorkspaceDescription": "チェックするとワークスペースを自動作成します",
+    "createTask": "タスクを作成",
+    "newIssue": "新しい課題",
+    "previewCodeBlock": "[コードブロック]",
+    "previewImage": "[画像]",
+    "previewImageWithName": "[画像: {{name}}]",
+    "previewFile": "[ファイル]",
+    "previewFileWithName": "[ファイル: {{name}}]",
+    "imageAttachmentNameFallback": "添付ファイル",
+    "removeImage": "画像を削除",
+    "maxImagesAtOnce": "一度に最大 {{count}} 枚までアップロードできます",
+    "maxFilesAtOnce": "一度に最大 {{count}} 個までアップロードできます",
+    "fileNotImage": "{{filename}} は画像ではありません",
+    "fileExceedsLimit": "{{filename}} は20MBの上限を超えています",
+    "unknownError": "不明なエラー",
+    "failedToUploadFile": "{{filename}} のアップロードに失敗しました: {{message}}",
+    "downloadAttachment": "添付ファイルをダウンロード",
+    "downloadAttachmentAria": "{{filename}} をダウンロード",
     "subIssues": "サブ課題",
     "noSubIssues": "サブ課題なし",
+    "markIndependentIssue": "独立した課題としてマーク",
     "parentIssue": "親",
     "subIssueIndicator": "↳",
     "showSubIssues": "サブ課題を表示",
@@ -378,11 +433,46 @@
       "action": "サインイン"
     }
   },
+  "createMode": {
+    "headings": {
+      "repoStep": "どのリポジトリで作業しますか？",
+      "chatStep": "何に取り組みますか？"
+    },
+    "repoPicker": {
+      "actions": {
+        "recent": "最近",
+        "browse": "参照",
+        "create": "作成"
+      }
+    }
+  },
   "syncError": {
     "networkErrors": "ネットワークエラー",
     "streamsAffected": "{{count}}件のストリームが影響を受けています",
     "streamsAffected_other": "{{count}}件のストリームが影響を受けています",
     "status": "(ステータス {{status}})",
     "refreshPage": "ページを更新"
+  },
+  "onboardingSignIn": {
+    "subtitle": "Sign in to continue",
+    "signedInAs": "Signed in as {{name}}.",
+    "moreOptions": "More options",
+    "featureHeader": "Feature",
+    "signedInHeader": "Signed in",
+    "skipSignInHeader": "Don't sign in",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "migration": {
+    "allProjectsMigrated": "すべてのプロジェクトはすでにクラウドに移行済みです。",
+    "continueToProjects": "プロジェクトに進む"
+  },
+  "appBar": {
+    "kanban": {
+      "tooltip": "カンバン",
+      "title": "カンバンボード",
+      "description": "サインインしてカンバンボードでコーディングエージェントを整理しましょう。",
+      "migrateOldProjects": "古いプロジェクトを移行"
+    }
   }
 }

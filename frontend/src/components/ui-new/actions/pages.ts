@@ -11,11 +11,7 @@ export type PageId =
   | 'diffOptions'
   | 'viewOptions'
   | 'repoActions' // Page for repo-specific actions (opened from repo card or CMD+K)
-  | 'issueActions' // Page for issue-specific actions (kanban mode)
-  | 'selectRepo' // Dynamic page for repo selection (not in Pages record)
-  | 'selectStatus' // Dynamic page for status selection (not in Pages record)
-  | 'selectPriority' // Dynamic page for priority selection (not in Pages record)
-  | 'selectSubIssue'; // Dynamic page for sub-issue selection (not in Pages record)
+  | 'issueActions'; // Page for issue-specific actions (kanban mode)
 
 // Items that can appear inside a group
 export type CommandBarGroupItem =
@@ -52,6 +48,12 @@ export interface PriorityItem {
   name: string;
 }
 
+// Branch item for dynamic branch selection page
+export interface BranchItem {
+  name: string;
+  isCurrent: boolean;
+}
+
 // Resolved types (after childPages expansion)
 export type ResolvedGroupItem =
   | { type: 'action'; action: ActionDefinition }
@@ -60,7 +62,8 @@ export type ResolvedGroupItem =
   | { type: 'status'; status: StatusItem }
   | { type: 'priority'; priority: PriorityItem }
   | { type: 'issue'; issue: Issue }
-  | { type: 'createSubIssue' };
+  | { type: 'createSubIssue' }
+  | { type: 'branch'; branch: BranchItem };
 
 export interface ResolvedGroup {
   label: string;
@@ -77,11 +80,7 @@ export interface CommandBarPage {
   isVisible?: (ctx: ActionVisibilityContext) => boolean;
 }
 
-// Static page IDs (excludes dynamic pages like selectRepo, selectStatus, selectPriority, and selectSubIssue)
-export type StaticPageId = Exclude<
-  PageId,
-  'selectRepo' | 'selectStatus' | 'selectPriority' | 'selectSubIssue'
->;
+export type StaticPageId = PageId;
 
 export const Pages: Record<StaticPageId, CommandBarPage> = {
   // Root page - shown when opening via CMD+K
@@ -98,7 +97,7 @@ export const Pages: Record<StaticPageId, CommandBarPage> = {
           { type: 'action', action: Actions.CopyWorkspacePath },
           { type: 'action', action: Actions.CopyRawLogs },
           { type: 'action', action: Actions.ToggleDevServer },
-          { type: 'action', action: Actions.OpenInOldUI },
+
           { type: 'childPages', id: 'workspaceActions' },
           { type: 'childPages', id: 'repoActions' },
           { type: 'childPages', id: 'issueActions' },
@@ -120,6 +119,7 @@ export const Pages: Record<StaticPageId, CommandBarPage> = {
           { type: 'action', action: Actions.SignOut },
           { type: 'action', action: Actions.Feedback },
           { type: 'action', action: Actions.WorkspacesGuide },
+          { type: 'action', action: Actions.ProjectsGuide },
           { type: 'action', action: Actions.ProjectSettings },
           { type: 'action', action: Actions.Settings },
         ],
@@ -245,7 +245,12 @@ export const Pages: Record<StaticPageId, CommandBarPage> = {
           { type: 'action', action: Actions.ChangeNewIssueAssignees },
           { type: 'action', action: Actions.MakeSubIssueOf },
           { type: 'action', action: Actions.AddSubIssue },
+          { type: 'action', action: Actions.RemoveParentIssue },
           { type: 'action', action: Actions.LinkWorkspace },
+          { type: 'action', action: Actions.MarkBlocking },
+          { type: 'action', action: Actions.MarkBlockedBy },
+          { type: 'action', action: Actions.MarkRelated },
+          { type: 'action', action: Actions.MarkDuplicateOf },
           { type: 'action', action: Actions.DuplicateIssue },
           { type: 'action', action: Actions.DeleteIssue },
         ],

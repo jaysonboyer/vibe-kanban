@@ -46,6 +46,10 @@ npx vibe-kanban
 
 Please head to the [website](https://vibekanban.com/docs) for the latest documentation and user guides.
 
+## Self-Hosting
+
+Want to host your own Vibe Kanban Cloud instance? See our [self-hosting guide](https://vibekanban.com/docs/self-hosting).
+  
 ## Support
 
 We use [GitHub Discussions](https://github.com/BloopAI/vibe-kanban/discussions) for feature requests. Please open a discussion to create a feature request. For bugs please open an issue on this repo.
@@ -79,7 +83,7 @@ pnpm i
 pnpm run dev
 ```
 
-This will start the backend. A blank DB will be copied from the `dev_assets_seed` folder.
+This will start the backend and frontend. A blank DB will be copied from the `dev_assets_seed` folder.
 
 ### Building the frontend
 
@@ -160,106 +164,6 @@ After making changes to the code, rebuild and reinstall:
 ```bash
 pnpm run build:npx
 npm install -g .
-```
-
-### Working with the Fork
-
-This repository is a fork of [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban). Here's how to manage the fork relationship:
-
-#### Initial Setup
-
-Set up your remotes (if not already configured):
-
-```bash
-# Your fork (should already be set as origin)
-git remote add origin git@github.com:jaysonboyer/vibe-kanban.git
-
-# Upstream (the original BloopAI repository)
-git remote add upstream https://github.com/BloopAI/vibe-kanban.git
-
-# Verify remotes
-git remote -v
-```
-
-#### Pushing to Your Fork
-
-```bash
-# Push to your fork's main branch
-git push origin main
-
-# Push a feature branch
-git checkout -b my-feature
-git push -u origin my-feature
-```
-
-#### Updating Your Fork from Upstream
-
-**Quick Method (Claude Code Skill):**
-
-This repository includes a Claude Code skill that automates the fork sync process. To use it:
-
-1. Install the skill by copying it to your global skills directory:
-   ```bash
-   cp -r .claude/skills/sync-fork ~/.claude/skills/sync-vibe-kanban-fork
-   ```
-2. Run: `/sync-vibe-kanban-fork`
-
-The skill will guide you through the sync process, handle conflicts, and provide status updates.
-
-**Manual Method:**
-
-To sync your fork with the latest changes from BloopAI/vibe-kanban:
-
-```bash
-# Fetch the latest changes from upstream
-git fetch upstream
-
-# Switch to your main branch
-git checkout main
-
-# Merge upstream changes into your main branch
-git merge upstream/main
-
-# Push the updates to your fork
-git push origin main
-```
-
-Alternatively, use rebase to maintain a linear history:
-
-```bash
-git fetch upstream
-git checkout main
-git rebase upstream/main
-git push origin main --force-with-lease
-```
-
-#### Creating Pull Requests
-
-**To your own fork (jaysonboyer/vibe-kanban):**
-```bash
-git checkout -b my-feature
-# Make changes and commit
-git push -u origin my-feature
-gh pr create --base main --head my-feature
-```
-
-**To upstream (BloopAI/vibe-kanban):**
-```bash
-git checkout -b my-feature
-# Make changes and commit
-git push -u origin my-feature
-gh pr create --repo BloopAI/vibe-kanban --base main --head jaysonboyer:my-feature
-```
-
-#### Syncing Feature Branches
-
-If you need to update a feature branch with the latest upstream changes:
-
-```bash
-git checkout my-feature
-git fetch upstream
-git rebase upstream/main
-git push origin my-feature --force-with-lease
 ```
 
 ### Environment Variables

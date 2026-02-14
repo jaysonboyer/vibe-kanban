@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +23,12 @@ export interface AssigneeSelectionDialogProps {
   projectId: string;
   issueIds: string[];
   isCreateMode?: boolean;
+  /** Initial assignee IDs for create mode (used instead of URL params when provided) */
+  createModeAssigneeIds?: string[];
+  /** Callback for create-mode assignee changes (bypasses URL params when provided) */
+  onCreateModeAssigneesChange?: (assigneeIds: string[]) => void;
+  /** Optional additional options for create-mode selection (e.g. "Me", "Unassigned"). */
+  additionalOptions?: MultiSelectOption<string>[];
 }
 
 const getUserDisplayName = (user: OrganizationMemberWithProfile): string => {
@@ -37,13 +43,20 @@ const getUserDisplayName = (user: OrganizationMemberWithProfile): string => {
 function AssigneeSelectionContent({
   issueIds,
   isCreateMode,
+  createModeAssigneeIds,
+  onCreateModeAssigneesChange,
+  additionalOptions,
 }: {
   issueIds: string[];
   isCreateMode: boolean;
+  createModeAssigneeIds?: string[];
+  onCreateModeAssigneesChange?: (assigneeIds: string[]) => void;
+  additionalOptions?: MultiSelectOption<string>[];
 }) {
   const { t } = useTranslation('common');
   const modal = useModal();
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const hasCreateCallback = onCreateModeAssigneesChange != null;
 
   // Get users from OrgContext - use membersWithProfilesById for OrganizationMemberWithProfile
   const { membersWithProfilesById } = useOrgContext();
@@ -56,7 +69,19 @@ function AssigneeSelectionContent({
   const { issueAssignees, insertIssueAssignee, removeIssueAssignee } =
     useProjectContext();
 
-  // Get/set create mode defaults from URL (URL is single source of truth)
+  // Local state for create mode when using callback pattern
+  const [localCreateAssignees, setLocalCreateAssignees] = useState<string[]>(
+    createModeAssigneeIds ?? []
+  );
+
+  // Keep local create-mode state aligned with incoming source-of-truth values.
+  // This avoids stale selections when the draft is reset outside the dialog.
+  useEffect(() => {
+    if (!hasCreateCallback) return;
+    setLocalCreateAssignees(createModeAssigneeIds ?? []);
+  }, [hasCreateCallback, createModeAssigneeIds, modal.visible]);
+
+  // Fallback: Get/set create mode defaults from URL (for callers without callback)
   const [searchParams, setSearchParams] = useSearchParams();
   const kanbanCreateDefaultAssigneeIds = useMemo(() => {
     const assigneesParam = searchParams.get('assignees');
@@ -76,101 +101,102 @@ function AssigneeSelectionContent({
     [searchParams, setSearchParams]
   );
 
-  // Compute initial assignee IDs based on mode
-  const initialAssigneeIds = useMemo(() => {
+  // Derive selected assignee IDs based on mode and callback availability
+  const selectedIds = useMemo(() => {
     if (isCreateMode) {
-      return kanbanCreateDefaultAssigneeIds;
+      return hasCreateCallback
+        ? localCreateAssignees
+        : kanbanCreateDefaultAssigneeIds;
     }
-    // Edit mode: get current assignees for the issue(s)
     return issueAssignees
       .filter((a) => issueIds.includes(a.issue_id))
       .map((a) => a.user_id);
-  }, [isCreateMode, issueIds, issueAssignees, kanbanCreateDefaultAssigneeIds]);
+  }, [
+    isCreateMode,
+    issueIds,
+    issueAssignees,
+    hasCreateCallback,
+    localCreateAssignees,
+    kanbanCreateDefaultAssigneeIds,
+  ]);
 
-  const [selectedIds, setSelectedIds] = useState<string[]>(initialAssigneeIds);
   const [search, setSearch] = useState('');
 
-  // Capture focus when dialog opens and reset state
+  // Capture focus when dialog opens and reset search
   useEffect(() => {
     if (modal.visible) {
       previousFocusRef.current = document.activeElement as HTMLElement;
-      setSelectedIds(initialAssigneeIds);
       setSearch('');
     }
-  }, [modal.visible, initialAssigneeIds]);
+  }, [modal.visible]);
 
-  const options: MultiSelectOption<string>[] = useMemo(
-    () =>
-      users.map((user) => ({
-        value: user.user_id,
-        label: getUserDisplayName(user),
-        searchValue: `${user.user_id} ${getUserDisplayName(user)} ${user.email ?? ''}`,
-        renderOption: () => (
-          <div className="flex items-center gap-base">
-            <UserAvatar user={user} className="h-5 w-5 text-[10px]" />
-            <span>{getUserDisplayName(user)}</span>
-          </div>
-        ),
-      })),
-    [users]
-  );
+  const options: MultiSelectOption<string>[] = useMemo(() => {
+    const userOptions = users.map((user) => ({
+      value: user.user_id,
+      label: getUserDisplayName(user),
+      searchValue: `${user.user_id} ${getUserDisplayName(user)} ${user.email ?? ''}`,
+      renderOption: () => (
+        <div className="flex items-center gap-base">
+          <UserAvatar user={user} className="h-5 w-5 text-[10px]" />
+          <span>{getUserDisplayName(user)}</span>
+        </div>
+      ),
+    }));
 
-  const handleToggle = useCallback((userId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId]
-    );
-  }, []);
+    if (!isCreateMode || !additionalOptions || additionalOptions.length === 0) {
+      return userOptions;
+    }
 
-  const handleConfirm = useCallback(() => {
-    if (isCreateMode) {
-      // Create mode: update the default assignees in store
-      setKanbanCreateDefaultAssigneeIds(selectedIds);
-    } else {
-      // Edit mode: apply changes via junction table mutations
-      const currentAssigneeRecords = issueAssignees.filter((a) =>
-        issueIds.includes(a.issue_id)
-      );
+    return [...additionalOptions, ...userOptions];
+  }, [users, isCreateMode, additionalOptions]);
 
-      // For each issue, compute and apply changes
-      for (const issueId of issueIds) {
-        const issueAssigneeRecords = currentAssigneeRecords.filter(
-          (a) => a.issue_id === issueId
-        );
-        const issueCurrentIds = new Set(
-          issueAssigneeRecords.map((a) => a.user_id)
-        );
+  const handleToggle = useCallback(
+    (userId: string) => {
+      const isSelected = selectedIds.includes(userId);
 
-        // Remove assignees no longer selected
-        for (const record of issueAssigneeRecords) {
-          if (!selectedIds.includes(record.user_id)) {
-            removeIssueAssignee(record.id);
-          }
+      if (isCreateMode) {
+        const newIds = isSelected
+          ? selectedIds.filter((id) => id !== userId)
+          : [...selectedIds, userId];
+        if (onCreateModeAssigneesChange) {
+          setLocalCreateAssignees(newIds);
+          onCreateModeAssigneesChange(newIds);
+        } else {
+          setKanbanCreateDefaultAssigneeIds(newIds);
         }
-
-        // Add new assignees
-        for (const userId of selectedIds) {
-          if (!issueCurrentIds.has(userId)) {
-            insertIssueAssignee({
-              issue_id: issueId,
-              user_id: userId,
-            });
+      } else {
+        // Edit mode: apply mutation immediately for each issue
+        for (const issueId of issueIds) {
+          if (isSelected) {
+            // Remove the assignee
+            const record = issueAssignees.find(
+              (a) => a.issue_id === issueId && a.user_id === userId
+            );
+            if (record) {
+              removeIssueAssignee(record.id);
+            }
+          } else {
+            // Add the assignee
+            insertIssueAssignee({ issue_id: issueId, user_id: userId });
           }
         }
       }
-    }
+    },
+    [
+      isCreateMode,
+      selectedIds,
+      issueIds,
+      issueAssignees,
+      onCreateModeAssigneesChange,
+      setKanbanCreateDefaultAssigneeIds,
+      insertIssueAssignee,
+      removeIssueAssignee,
+    ]
+  );
+
+  const handleClose = useCallback(() => {
     modal.hide();
-  }, [
-    isCreateMode,
-    selectedIds,
-    issueIds,
-    issueAssignees,
-    setKanbanCreateDefaultAssigneeIds,
-    insertIssueAssignee,
-    removeIssueAssignee,
-    modal,
-  ]);
+  }, [modal]);
 
   // Restore focus when dialog closes
   const handleCloseAutoFocus = useCallback((event: Event) => {
@@ -189,7 +215,7 @@ function AssigneeSelectionContent({
         options={options}
         selectedValues={selectedIds}
         onToggle={handleToggle}
-        onConfirm={handleConfirm}
+        onClose={handleClose}
         search={search}
         onSearchChange={setSearch}
       />
@@ -202,6 +228,9 @@ function AssigneeSelectionWithContext({
   projectId,
   issueIds,
   isCreateMode = false,
+  createModeAssigneeIds,
+  onCreateModeAssigneesChange,
+  additionalOptions,
 }: AssigneeSelectionDialogProps) {
   // Get organization ID from store (set when navigating to project)
   const selectedOrgId = useOrganizationStore((s) => s.selectedOrgId);
@@ -222,6 +251,9 @@ function AssigneeSelectionWithContext({
         <AssigneeSelectionContent
           issueIds={issueIds}
           isCreateMode={isCreateMode}
+          createModeAssigneeIds={createModeAssigneeIds}
+          onCreateModeAssigneesChange={onCreateModeAssigneesChange}
+          additionalOptions={additionalOptions}
         />
       </ProjectProvider>
     </OrgProvider>
@@ -230,12 +262,22 @@ function AssigneeSelectionWithContext({
 
 const AssigneeSelectionDialogImpl =
   NiceModal.create<AssigneeSelectionDialogProps>(
-    ({ projectId, issueIds, isCreateMode }) => {
+    ({
+      projectId,
+      issueIds,
+      isCreateMode,
+      createModeAssigneeIds,
+      onCreateModeAssigneesChange,
+      additionalOptions,
+    }) => {
       return (
         <AssigneeSelectionWithContext
           projectId={projectId}
           issueIds={issueIds}
           isCreateMode={isCreateMode}
+          createModeAssigneeIds={createModeAssigneeIds}
+          onCreateModeAssigneesChange={onCreateModeAssigneesChange}
+          additionalOptions={additionalOptions}
         />
       );
     }

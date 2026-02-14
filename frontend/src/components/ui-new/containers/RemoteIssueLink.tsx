@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
-import { useEntity } from '@/lib/electric/hooks';
-import { ISSUE_ENTITY } from 'shared/remote-types';
+import { useShape } from '@/lib/electric/hooks';
+import { PROJECT_ISSUES_SHAPE } from 'shared/remote-types';
 import { LinkIcon } from '@phosphor-icons/react';
 
 interface RemoteIssueLinkProps {
@@ -10,7 +10,7 @@ interface RemoteIssueLinkProps {
 
 export function RemoteIssueLink({ projectId, issueId }: RemoteIssueLinkProps) {
   // Subscribe to issues for this project via Electric sync
-  const { data: issues, isLoading } = useEntity(ISSUE_ENTITY, {
+  const { data: issues, isLoading } = useShape(PROJECT_ISSUES_SHAPE, {
     project_id: projectId,
   });
 
@@ -24,7 +24,7 @@ export function RemoteIssueLink({ projectId, issueId }: RemoteIssueLinkProps) {
   return (
     <Link
       to={`/projects/${projectId}/issues/${issueId}`}
-      className="flex items-center gap-half px-base py-half text-sm text-low hover:text-normal hover:bg-secondary rounded-sm transition-colors"
+      className="flex items-center gap-half px-base text-sm text-low hover:text-normal hover:bg-secondary rounded-sm transition-colors"
     >
       <LinkIcon className="size-icon-xs" weight="bold" />
       <span>{issue.simple_id}</span>

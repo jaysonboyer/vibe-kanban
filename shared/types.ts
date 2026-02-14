@@ -58,6 +58,20 @@ export type DraftWorkspaceLinkedIssue = { issue_id: string, simple_id: string, t
 
 export type DraftWorkspaceRepo = { repo_id: string, target_branch: string, };
 
+export type DraftIssueData = { title: string, description: string | null, status_id: string, 
+/**
+ * Stored as the string value of IssuePriority (e.g. "urgent", "high", "medium", "low")
+ */
+priority: string | null, assignee_ids: Array<string>, tag_ids: Array<string>, create_draft_workspace: boolean, 
+/**
+ * The project this draft belongs to
+ */
+project_id: string, 
+/**
+ * Parent issue ID if creating a sub-issue
+ */
+parent_issue_id: string | null, };
+
 export type PreviewSettingsData = { url: string, screen_size: string | null, responsive_width: number | null, responsive_height: number | null, };
 
 export type WorkspaceNotesData = { content: string, };
@@ -86,6 +100,10 @@ pane_sizes: { [key in string]?: JsonValue },
  */
 collapsed_paths: { [key in string]?: Array<string> }, 
 /**
+ * Preferred file-search repo
+ */
+file_search_repo_id: string | null, 
+/**
  * Global left sidebar visibility
  */
 is_left_sidebar_visible: boolean | null, 
@@ -102,9 +120,9 @@ is_terminal_visible: boolean | null,
  */
 workspace_panel_states: { [key in string]?: WorkspacePanelStateData }, };
 
-export type ScratchPayload = { "type": "DRAFT_TASK", "data": string } | { "type": "DRAFT_FOLLOW_UP", "data": DraftFollowUpData } | { "type": "DRAFT_WORKSPACE", "data": DraftWorkspaceData } | { "type": "PREVIEW_SETTINGS", "data": PreviewSettingsData } | { "type": "WORKSPACE_NOTES", "data": WorkspaceNotesData } | { "type": "UI_PREFERENCES", "data": UiPreferencesData };
+export type ScratchPayload = { "type": "DRAFT_TASK", "data": string } | { "type": "DRAFT_FOLLOW_UP", "data": DraftFollowUpData } | { "type": "DRAFT_WORKSPACE", "data": DraftWorkspaceData } | { "type": "DRAFT_ISSUE", "data": DraftIssueData } | { "type": "PREVIEW_SETTINGS", "data": PreviewSettingsData } | { "type": "WORKSPACE_NOTES", "data": WorkspaceNotesData } | { "type": "UI_PREFERENCES", "data": UiPreferencesData };
 
-export enum ScratchType { DRAFT_TASK = "DRAFT_TASK", DRAFT_FOLLOW_UP = "DRAFT_FOLLOW_UP", DRAFT_WORKSPACE = "DRAFT_WORKSPACE", PREVIEW_SETTINGS = "PREVIEW_SETTINGS", WORKSPACE_NOTES = "WORKSPACE_NOTES", UI_PREFERENCES = "UI_PREFERENCES" }
+export enum ScratchType { DRAFT_TASK = "DRAFT_TASK", DRAFT_FOLLOW_UP = "DRAFT_FOLLOW_UP", DRAFT_WORKSPACE = "DRAFT_WORKSPACE", DRAFT_ISSUE = "DRAFT_ISSUE", PREVIEW_SETTINGS = "PREVIEW_SETTINGS", WORKSPACE_NOTES = "WORKSPACE_NOTES", UI_PREFERENCES = "UI_PREFERENCES" }
 
 export type Scratch = { id: string, payload: ScratchPayload, created_at: string, updated_at: string, };
 
@@ -206,7 +224,7 @@ export type AcceptInvitationResponse = { organization_id: string, organization_s
 
 export type RevokeInvitationRequest = { invitation_id: string, };
 
-export type OrganizationMember = { user_id: string, role: MemberRole, joined_at: string, };
+export type OrganizationMemberInfo = { user_id: string, role: MemberRole, joined_at: string, };
 
 export type OrganizationMemberWithProfile = { user_id: string, role: MemberRole, joined_at: string, first_name: string | null, last_name: string | null, username: string | null, email: string | null, avatar_url: string | null, };
 
@@ -262,6 +280,8 @@ export type CurrentUserResponse = { user_id: string, };
 
 export type CreateFollowUpAttempt = { prompt: string, executor_profile_id: ExecutorProfileId, retry_process_id: string | null, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
 
+export type ResetProcessRequest = { process_id: string, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
+
 export type ChangeTargetBranchRequest = { repo_id: string, new_target_branch: string, };
 
 export type ChangeTargetBranchResponse = { repo_id: string, new_target_branch: string, status: [number, number], };
@@ -282,7 +302,9 @@ export type OpenEditorRequest = { editor_type: string | null, file_path: string 
 
 export type OpenEditorResponse = { url: string | null, };
 
-export type CreateAndStartTaskRequest = { task: CreateTask, executor_profile_id: ExecutorProfileId, repos: Array<WorkspaceRepoInput>, };
+export type LinkedIssueInfo = { remote_project_id: string, issue_id: string, };
+
+export type CreateAndStartTaskRequest = { task: CreateTask, executor_profile_id: ExecutorProfileId, repos: Array<WorkspaceRepoInput>, linked_issue: LinkedIssueInfo | null, };
 
 export type CreatePrApiRequest = { title: string, body: string | null, target_branch: string | null, draft: boolean | null, repo_id: string, auto_generate_description: boolean, };
 
@@ -402,7 +424,15 @@ has_unseen_turns: boolean,
 /**
  * PR status for this workspace (if any PR exists)
  */
-pr_status: MergeStatus | null, };
+pr_status: MergeStatus | null, 
+/**
+ * PR number for this workspace (if any PR exists)
+ */
+pr_number: bigint | null, 
+/**
+ * PR URL for this workspace (if any PR exists)
+ */
+pr_url: string | null, };
 
 export type WorkspaceSummaryResponse = { summaries: Array<WorkspaceSummary>, };
 
@@ -414,7 +444,7 @@ export type DirectoryListResponse = { entries: Array<DirectoryEntry>, current_pa
 
 export type SearchMode = "taskform" | "settings";
 
-export type Config = { config_version: string, theme: ThemeMode, executor_profile: ExecutorProfileId, disclaimer_acknowledged: boolean, onboarding_acknowledged: boolean, notifications: NotificationConfig, editor: EditorConfig, github: GitHubConfig, analytics_enabled: boolean, workspace_dir: string | null, last_app_version: string | null, show_release_notes: boolean, language: UiLanguage, git_branch_prefix: string, showcases: ShowcaseState, pr_auto_description_enabled: boolean, pr_auto_description_prompt: string | null, beta_workspaces: boolean, beta_workspaces_invitation_sent: boolean, commit_reminder_enabled: boolean, commit_reminder_prompt: string | null, send_message_shortcut: SendMessageShortcut, };
+export type Config = { config_version: string, theme: ThemeMode, executor_profile: ExecutorProfileId, disclaimer_acknowledged: boolean, onboarding_acknowledged: boolean, remote_onboarding_acknowledged: boolean, notifications: NotificationConfig, editor: EditorConfig, github: GitHubConfig, analytics_enabled: boolean, workspace_dir: string | null, last_app_version: string | null, show_release_notes: boolean, language: UiLanguage, git_branch_prefix: string, showcases: ShowcaseState, pr_auto_description_enabled: boolean, pr_auto_description_prompt: string | null, commit_reminder_enabled: boolean, commit_reminder_prompt: string | null, send_message_shortcut: SendMessageShortcut, };
 
 export type NotificationConfig = { sound_enabled: boolean, push_enabled: boolean, sound_file: SoundFile, };
 

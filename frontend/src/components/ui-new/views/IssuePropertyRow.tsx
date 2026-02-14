@@ -1,11 +1,14 @@
 import { cn } from '@/lib/utils';
-import { PlusIcon, UsersIcon } from '@phosphor-icons/react';
+import { PlusIcon, UsersIcon, XIcon } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import type { IssuePriority, ProjectStatus } from 'shared/remote-types';
+import type { OrganizationMemberWithProfile } from 'shared/types';
 import { PrimaryButton } from '@/components/ui-new/primitives/PrimaryButton';
+import { IconButton } from '@/components/ui-new/primitives/IconButton';
 import { StatusDot } from '@/components/ui-new/primitives/StatusDot';
 import { PriorityIcon } from '@/components/ui-new/primitives/PriorityIcon';
-import { Badge } from '@/components/ui/badge';
+import { UserAvatar } from '@/components/ui-new/primitives/UserAvatar';
+import { KanbanAssignee } from '@/components/ui-new/primitives/KanbanAssignee';
 
 const priorityLabels: Record<IssuePriority, string> = {
   urgent: 'Urgent',
@@ -18,9 +21,12 @@ export interface IssuePropertyRowProps {
   statusId: string;
   priority: IssuePriority | null;
   assigneeIds: string[];
+  assigneeUsers?: OrganizationMemberWithProfile[];
   statuses: ProjectStatus[];
+  creatorUser?: OrganizationMemberWithProfile | null;
   parentIssue?: { id: string; simpleId: string } | null;
   onParentIssueClick?: () => void;
+  onRemoveParentIssue?: () => void;
   onStatusClick: () => void;
   onPriorityClick: () => void;
   onAssigneeClick: () => void;
@@ -32,10 +38,12 @@ export interface IssuePropertyRowProps {
 export function IssuePropertyRow({
   statusId,
   priority,
-  assigneeIds,
+  assigneeUsers,
   statuses,
+  creatorUser,
   parentIssue,
   onParentIssueClick,
+  onRemoveParentIssue,
   onStatusClick,
   onPriorityClick,
   onAssigneeClick,
@@ -72,40 +80,67 @@ export function IssuePropertyRow({
         onClick={onAssigneeClick}
         disabled={disabled}
       >
-        <UsersIcon className="size-icon-xs" weight="bold" />
-        {t('kanban.assignee', 'Assignee')}
-        {assigneeIds.length > 0 && (
-          <Badge
-            variant="secondary"
-            className="px-1.5 py-0 text-xs h-5 min-w-5 justify-center bg-brand text-on-brand border-none"
-          >
-            {assigneeIds.length}
-          </Badge>
+        {assigneeUsers && assigneeUsers.length > 0 ? (
+          <KanbanAssignee assignees={assigneeUsers} />
+        ) : (
+          <>
+            <UsersIcon className="size-icon-xs" weight="bold" />
+            {t('kanban.assignee', 'Assignee')}
+          </>
         )}
       </PrimaryButton>
 
+      {creatorUser &&
+        (creatorUser.first_name?.trim() || creatorUser.username?.trim()) && (
+          <div className="flex items-center gap-half px-base py-half bg-panel rounded-sm text-sm whitespace-nowrap">
+            <span className="text-low">
+              {t('kanban.createdBy', 'Created by')}
+            </span>
+            <UserAvatar
+              user={creatorUser}
+              className="h-5 w-5 text-[9px] border border-border"
+            />
+            <span className="text-normal truncate max-w-[120px]">
+              {creatorUser.first_name?.trim() || creatorUser.username?.trim()}
+            </span>
+          </div>
+        )}
+
       {parentIssue && (
-        <button
-          type="button"
-          onClick={onParentIssueClick}
-          className="flex items-center gap-half px-base py-half bg-panel rounded-sm text-sm hover:bg-secondary transition-colors whitespace-nowrap"
-        >
-          <span className="text-low">{t('kanban.parentIssue', 'Parent')}:</span>
-          <span className="font-ibm-plex-mono text-normal">
-            {parentIssue.simpleId}
-          </span>
-        </button>
+        <div className="flex items-center gap-half">
+          <PrimaryButton
+            variant="tertiary"
+            onClick={onParentIssueClick}
+            disabled={disabled}
+            className="whitespace-nowrap text-sm"
+          >
+            <span className="text-low">
+              {t('kanban.parentIssue', 'Parent')}:
+            </span>
+            <span className="font-ibm-plex-mono text-normal">
+              {parentIssue.simpleId}
+            </span>
+          </PrimaryButton>
+          {onRemoveParentIssue && (
+            <IconButton
+              icon={XIcon}
+              onClick={onRemoveParentIssue}
+              disabled={disabled}
+              aria-label="Remove parent issue"
+              title="Remove parent issue"
+            />
+          )}
+        </div>
       )}
 
       {onAddClick && (
-        <button
-          type="button"
+        <IconButton
+          icon={PlusIcon}
           onClick={onAddClick}
           disabled={disabled}
-          className="flex items-center justify-center p-half rounded-sm text-low hover:text-normal hover:bg-secondary transition-colors disabled:opacity-50"
-        >
-          <PlusIcon className="size-icon-xs" weight="bold" />
-        </button>
+          aria-label="Add"
+          title="Add"
+        />
       )}
     </div>
   );

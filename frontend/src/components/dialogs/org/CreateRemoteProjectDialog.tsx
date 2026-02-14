@@ -14,8 +14,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { useTranslation } from 'react-i18next';
 import { defineModal } from '@/lib/modals';
-import { useEntity } from '@/lib/electric/hooks';
-import { PROJECT_ENTITY, type Project } from 'shared/remote-types';
+import { useShape } from '@/lib/electric/hooks';
+import {
+  PROJECTS_SHAPE,
+  PROJECT_MUTATION,
+  type Project,
+} from 'shared/remote-types';
 import { getRandomPresetColor, PRESET_COLORS } from '@/lib/colors';
 import { ColorPicker } from '@/components/ui-new/containers/ColorPickerContainer';
 
@@ -42,7 +46,9 @@ const CreateRemoteProjectDialogImpl =
       [organizationId]
     );
 
-    const { insert, error: entityError } = useEntity(PROJECT_ENTITY, params);
+    const { insert, error: syncError } = useShape(PROJECTS_SHAPE, params, {
+      mutation: PROJECT_MUTATION,
+    });
 
     useEffect(() => {
       // Reset form when dialog opens
@@ -55,11 +61,11 @@ const CreateRemoteProjectDialogImpl =
     }, [modal.visible]);
 
     useEffect(() => {
-      if (entityError) {
-        setError(entityError.message || 'Failed to create project');
+      if (syncError) {
+        setError(syncError.message || 'Failed to create project');
         setIsCreating(false);
       }
-    }, [entityError]);
+    }, [syncError]);
 
     const validateName = (value: string): string | null => {
       const trimmedValue = value.trim();
@@ -71,7 +77,7 @@ const CreateRemoteProjectDialogImpl =
       return null;
     };
 
-    const handleCreate = () => {
+    const handleCreate = async () => {
       const nameError = validateName(name);
       if (nameError) {
         setError(nameError);
@@ -82,15 +88,17 @@ const CreateRemoteProjectDialogImpl =
       setIsCreating(true);
 
       try {
-        const { data: project } = insert({
+        const { data: project, persisted } = insert({
           organization_id: organizationId,
           name: name.trim(),
           color: color,
         });
 
+        const persistedProject = await persisted;
+
         modal.resolve({
           action: 'created',
-          project,
+          project: persistedProject ?? project,
         } as CreateRemoteProjectResult);
         modal.hide();
       } catch (err) {
@@ -107,6 +115,8 @@ const CreateRemoteProjectDialogImpl =
     };
 
     const handleOpenChange = (open: boolean) => {
+      if (isCreating) return;
+
       if (!open) {
         handleCancel();
       }
@@ -115,7 +125,7 @@ const CreateRemoteProjectDialogImpl =
     const handleKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && name.trim() && !isCreating) {
         e.preventDefault();
-        handleCreate();
+        void handleCreate();
       }
     };
 

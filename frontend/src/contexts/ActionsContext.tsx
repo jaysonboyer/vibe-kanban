@@ -1,16 +1,17 @@
 import {
-  createContext,
   useContext,
   useCallback,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { createHmrContext } from '@/lib/hmrContext.ts';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Workspace } from 'shared/types';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { ConfirmDialog } from '@/components/ui-new/dialogs/ConfirmDialog';
+import { buildIssueCreatePath } from '@/lib/routes/projectSidebarRoutes';
 import {
   type ActionDefinition,
   type ActionExecutorContext,
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui-new/actions';
 import { getActionLabel } from '@/components/ui-new/actions/useActionVisibility';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { UserContext } from '@/contexts/remote/UserContext';
 import { useDevServer } from '@/hooks/useDevServer';
 import { useLogsPanel } from '@/contexts/LogsPanelContext';
 import { useLogStream } from '@/hooks/useLogStream';
@@ -69,6 +71,14 @@ interface ActionsContextValue {
   // Open workspace selection dialog to link a workspace to an issue
   openWorkspaceSelection: (projectId: string, issueId: string) => Promise<void>;
 
+  // Open relationship selection in command bar
+  openRelationshipSelection: (
+    projectId: string,
+    issueId: string,
+    relationshipType: 'blocking' | 'related' | 'has_duplicate',
+    direction: 'forward' | 'reverse'
+  ) => Promise<void>;
+
   // Set default status for issue creation based on current kanban tab
   setDefaultCreateStatusId: (statusId: string | undefined) => void;
 
@@ -79,7 +89,10 @@ interface ActionsContextValue {
   executorContext: ActionExecutorContext;
 }
 
-const ActionsContext = createContext<ActionsContextValue | null>(null);
+const ActionsContext = createHmrContext<ActionsContextValue | null>(
+  'ActionsContext',
+  null
+);
 
 interface ActionsProviderProps {
   children: ReactNode;
@@ -94,6 +107,8 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
   // Get workspace context (ActionsProvider is nested inside WorkspaceProvider)
   const { selectWorkspace, activeWorkspaces, workspaceId, workspace } =
     useWorkspaceContext();
+  // Get remote workspaces (optional — not available in VSCodeScope)
+  const userCtx = useContext(UserContext);
 
   // Get dev server state
   const { start, stop, runningDevServers } = useDevServer(workspaceId);
@@ -118,9 +133,7 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
   const navigateToCreateIssue = useCallback(
     (options?: { statusId?: string }) => {
       if (!projectId) return;
-      const params = new URLSearchParams({ mode: 'create' });
-      if (options?.statusId) params.set('statusId', options.statusId);
-      navigate(`/projects/${projectId}?${params.toString()}`);
+      navigate(buildIssueCreatePath(projectId, options));
     },
     [navigate, projectId]
   );
@@ -144,27 +157,29 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
     return null;
   }, [logsPanelContent, processLogs]);
 
-  // Open status selection in command bar (uses dynamic import to avoid circular deps)
+  // Open status selection dialog (uses dynamic import to avoid circular deps)
   const openStatusSelection = useCallback(
     async (projectId: string, issueIds: string[]) => {
-      const { CommandBarDialog } = await import(
-        '@/components/ui-new/dialogs/CommandBarDialog'
+      const { ProjectSelectionDialog } = await import(
+        '@/components/ui-new/dialogs/selections/ProjectSelectionDialog'
       );
-      await CommandBarDialog.show({
-        pendingStatusSelection: { projectId, issueIds },
+      await ProjectSelectionDialog.show({
+        projectId,
+        selection: { type: 'status', issueIds },
       });
     },
     []
   );
 
-  // Open priority selection in command bar (uses dynamic import to avoid circular deps)
+  // Open priority selection dialog (uses dynamic import to avoid circular deps)
   const openPrioritySelection = useCallback(
     async (projectId: string, issueIds: string[]) => {
-      const { CommandBarDialog } = await import(
-        '@/components/ui-new/dialogs/CommandBarDialog'
+      const { ProjectSelectionDialog } = await import(
+        '@/components/ui-new/dialogs/selections/ProjectSelectionDialog'
       );
-      await CommandBarDialog.show({
-        pendingPrioritySelection: { projectId, issueIds },
+      await ProjectSelectionDialog.show({
+        projectId,
+        selection: { type: 'priority', issueIds },
       });
     },
     []
@@ -181,18 +196,19 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
     []
   );
 
-  // Open sub-issue selection in command bar (uses dynamic import to avoid circular deps)
+  // Open sub-issue selection dialog (uses dynamic import to avoid circular deps)
   const openSubIssueSelection = useCallback(
     async (
       projectId: string,
       parentIssueId: string,
       mode: 'addChild' | 'setParent' = 'addChild'
     ) => {
-      const { CommandBarDialog } = await import(
-        '@/components/ui-new/dialogs/CommandBarDialog'
+      const { ProjectSelectionDialog } = await import(
+        '@/components/ui-new/dialogs/selections/ProjectSelectionDialog'
       );
-      await CommandBarDialog.show({
-        pendingSubIssueSelection: { projectId, parentIssueId, mode },
+      await ProjectSelectionDialog.show({
+        projectId,
+        selection: { type: 'subIssue', parentIssueId, mode },
       });
     },
     []
@@ -205,6 +221,30 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
         '@/components/ui-new/dialogs/WorkspaceSelectionDialog'
       );
       await WorkspaceSelectionDialog.show({ projectId, issueId });
+    },
+    []
+  );
+
+  // Open relationship selection dialog (uses dynamic import to avoid circular deps)
+  const openRelationshipSelection = useCallback(
+    async (
+      projectId: string,
+      issueId: string,
+      relationshipType: 'blocking' | 'related' | 'has_duplicate',
+      direction: 'forward' | 'reverse'
+    ) => {
+      const { ProjectSelectionDialog } = await import(
+        '@/components/ui-new/dialogs/selections/ProjectSelectionDialog'
+      );
+      await ProjectSelectionDialog.show({
+        projectId,
+        selection: {
+          type: 'relationship',
+          issueId,
+          relationshipType,
+          direction,
+        },
+      });
     },
     []
   );
@@ -228,11 +268,13 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
       openAssigneeSelection,
       openSubIssueSelection,
       openWorkspaceSelection,
+      openRelationshipSelection,
       navigateToCreateIssue,
       defaultCreateStatusId,
       kanbanOrgId: selectedOrgId ?? undefined,
       kanbanProjectId: projectId,
       projectMutations: projectMutations ?? undefined,
+      remoteWorkspaces: userCtx?.workspaces ?? [],
     };
   }, [
     navigate,
@@ -251,11 +293,13 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
     openAssigneeSelection,
     openSubIssueSelection,
     openWorkspaceSelection,
+    openRelationshipSelection,
     navigateToCreateIssue,
     defaultCreateStatusId,
     selectedOrgId,
     projectId,
     projectMutations,
+    userCtx?.workspaces,
   ]);
 
   // Main action executor with centralized target validation and error handling
@@ -341,6 +385,7 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
       openAssigneeSelection,
       openSubIssueSelection,
       openWorkspaceSelection,
+      openRelationshipSelection,
       setDefaultCreateStatusId,
       registerProjectMutations,
       executorContext,
@@ -353,6 +398,7 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
       openAssigneeSelection,
       openSubIssueSelection,
       openWorkspaceSelection,
+      openRelationshipSelection,
       registerProjectMutations,
       executorContext,
     ]

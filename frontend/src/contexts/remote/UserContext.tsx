@@ -1,19 +1,14 @@
-import {
-  createContext,
-  useContext,
-  useMemo,
-  useCallback,
-  type ReactNode,
-} from 'react';
-import { useEntity } from '@/lib/electric/hooks';
-import { WORKSPACE_ENTITY, type Workspace } from 'shared/remote-types';
+import { useContext, useMemo, useCallback, type ReactNode } from 'react';
+import { createHmrContext } from '@/lib/hmrContext.ts';
+import { useShape } from '@/lib/electric/hooks';
+import { USER_WORKSPACES_SHAPE, type Workspace } from 'shared/remote-types';
 import type { SyncError } from '@/lib/electric/types';
 import { useAuth } from '@/hooks/auth/useAuth';
 
 /**
  * UserContext provides user-scoped data.
  *
- * Entities synced at user scope:
+ * Shapes synced at user scope:
  * - Workspaces (data only, scoped by owner_user_id)
  */
 export interface UserContextValue {
@@ -29,7 +24,10 @@ export interface UserContextValue {
   getWorkspacesForIssue: (issueId: string) => Workspace[];
 }
 
-const UserContext = createContext<UserContextValue | null>(null);
+export const UserContext = createHmrContext<UserContextValue | null>(
+  'UserContext',
+  null
+);
 
 interface UserProviderProps {
   children: ReactNode;
@@ -42,8 +40,8 @@ export function UserProvider({ children }: UserProviderProps) {
   const params = useMemo(() => ({}), []);
   const enabled = isSignedIn;
 
-  // Entity subscriptions
-  const workspacesResult = useEntity(WORKSPACE_ENTITY, params, { enabled });
+  // Shape subscriptions
+  const workspacesResult = useShape(USER_WORKSPACES_SHAPE, params, { enabled });
 
   // Lookup helpers
   const getWorkspacesForIssue = useCallback(

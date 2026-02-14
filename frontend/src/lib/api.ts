@@ -5,6 +5,7 @@ import {
   ApiResponse,
   Config,
   CreateFollowUpAttempt,
+  ResetProcessRequest,
   EditorType,
   CreatePrApiRequest,
   CreateTask,
@@ -241,6 +242,11 @@ export const handleApiResponse = async <T, E = T>(
 
 // Project Management APIs
 export const projectsApi = {
+  getAll: async (): Promise<Project[]> => {
+    const response = await makeRequest('/api/projects');
+    return handleApiResponse<Project[]>(response);
+  },
+
   create: async (data: CreateProject): Promise<Project> => {
     const response = await makeRequest('/api/projects', {
       method: 'POST',
@@ -411,6 +417,17 @@ export const sessionsApi = {
     });
     return handleApiResponse<ExecutionProcess, ReviewError>(response);
   },
+
+  reset: async (
+    sessionId: string,
+    data: ResetProcessRequest
+  ): Promise<void> => {
+    const response = await makeRequest(`/api/sessions/${sessionId}/reset`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<void>(response);
+  },
 };
 
 // Task Attempts APIs
@@ -431,12 +448,6 @@ export const attemptsApi = {
   getAllWorkspaces: async (): Promise<Workspace[]> => {
     const response = await makeRequest('/api/task-attempts');
     return handleApiResponse<Workspace[]>(response);
-  },
-
-  /** Get total count of workspaces */
-  getCount: async (): Promise<number> => {
-    const response = await makeRequest('/api/task-attempts/count');
-    return handleApiResponse<number>(response);
   },
 
   get: async (attemptId: string): Promise<Workspace> => {
@@ -479,8 +490,17 @@ export const attemptsApi = {
     return handleApiResponse<void>(response);
   },
 
-  delete: async (attemptId: string): Promise<void> => {
-    const response = await makeRequest(`/api/task-attempts/${attemptId}`, {
+  delete: async (
+    attemptId: string,
+    deleteBranches?: boolean
+  ): Promise<void> => {
+    const params = new URLSearchParams();
+    if (deleteBranches) {
+      params.set('delete_branches', 'true');
+    }
+    const queryString = params.toString();
+    const url = `/api/task-attempts/${attemptId}${queryString ? `?${queryString}` : ''}`;
+    const response = await makeRequest(url, {
       method: 'DELETE',
     });
     return handleApiResponse<void>(response);
@@ -827,6 +847,11 @@ export const fileSystemApi = {
 export const repoApi = {
   list: async (): Promise<Repo[]> => {
     const response = await makeRequest('/api/repos');
+    return handleApiResponse<Repo[]>(response);
+  },
+
+  listRecent: async (): Promise<Repo[]> => {
+    const response = await makeRequest('/api/repos/recent');
     return handleApiResponse<Repo[]>(response);
   },
 
@@ -1188,6 +1213,9 @@ export const oauthApi = {
   /** Returns the current access token for the remote server (auto-refreshes if needed) */
   getToken: async (): Promise<TokenResponse | null> => {
     const response = await makeRequest('/api/auth/token');
+    if (response.status === 401) {
+      throw new ApiError('Unauthorized', 401, response);
+    }
     if (!response.ok) return null;
     return handleApiResponse<TokenResponse>(response);
   },

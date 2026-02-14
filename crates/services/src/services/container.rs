@@ -94,6 +94,8 @@ pub trait ContainerService {
 
     fn notification_service(&self) -> &NotificationService;
 
+    async fn touch(&self, workspace: &Workspace) -> Result<(), ContainerError>;
+
     fn workspace_to_current_dir(&self, workspace: &Workspace) -> PathBuf;
 
     async fn available_agent_slash_commands(
@@ -523,6 +525,43 @@ pub trait ContainerService {
         Ok(())
     }
 
+    /// Archive a workspace: set archived flag, stop running dev servers, and run archive script.
+    async fn archive_workspace(&self, workspace_id: Uuid) -> Result<(), ContainerError> {
+        let pool = &self.db().pool;
+
+        Workspace::set_archived(pool, workspace_id, true).await?;
+
+        // Stop running dev servers
+        if let Ok(dev_servers) =
+            ExecutionProcess::find_running_dev_servers_by_workspace(pool, workspace_id).await
+        {
+            for dev_server in dev_servers {
+                if let Err(e) = self
+                    .stop_execution(&dev_server, ExecutionProcessStatus::Killed)
+                    .await
+                {
+                    tracing::error!(
+                        "Failed to stop dev server {} for workspace {}: {}",
+                        dev_server.id,
+                        workspace_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        // Run archive script (silently skips if not configured)
+        if let Err(e) = self.try_run_archive_script(workspace_id).await {
+            tracing::error!(
+                "Failed to run archive script for workspace {}: {}",
+                workspace_id,
+                e
+            );
+        }
+
+        Ok(())
+    }
+
     fn setup_actions_for_repos(&self, repos: &[Repo]) -> Option<ExecutorAction> {
         let repos_with_setup: Vec<_> = repos.iter().filter(|r| r.setup_script.is_some()).collect();
 
@@ -590,6 +629,81 @@ pub trait ContainerService {
             }
         }
         chained
+    }
+
+    /// Reset a session to a specific process: restore worktrees, stop processes, drop later processes.
+    async fn reset_session_to_process(
+        &self,
+        session_id: Uuid,
+        target_process_id: Uuid,
+        perform_git_reset: bool,
+        force_when_dirty: bool,
+    ) -> Result<(), ContainerError> {
+        let pool = &self.db().pool;
+
+        let process = ExecutionProcess::find_by_id(pool, target_process_id)
+            .await?
+            .ok_or_else(|| ContainerError::Other(anyhow!("Process not found")))?;
+        if process.session_id != session_id {
+            return Err(ContainerError::Other(anyhow!(
+                "Process does not belong to this session"
+            )));
+        }
+
+        let session = Session::find_by_id(pool, session_id)
+            .await?
+            .ok_or_else(|| ContainerError::Other(anyhow!("Session not found")))?;
+        let workspace = Workspace::find_by_id(pool, session.workspace_id)
+            .await?
+            .ok_or_else(|| ContainerError::Other(anyhow!("Workspace not found")))?;
+
+        let repos = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id).await?;
+        let repo_states =
+            ExecutionProcessRepoState::find_by_execution_process_id(pool, target_process_id)
+                .await?;
+
+        let container_ref = self.ensure_container_exists(&workspace).await?;
+        let workspace_dir = std::path::PathBuf::from(container_ref);
+        let is_dirty = self
+            .is_container_clean(&workspace)
+            .await
+            .map(|is_clean| !is_clean)
+            .unwrap_or(false);
+
+        for repo in &repos {
+            let repo_state = repo_states.iter().find(|s| s.repo_id == repo.id);
+            let target_oid = match repo_state.and_then(|s| s.before_head_commit.clone()) {
+                Some(oid) => Some(oid),
+                None => {
+                    ExecutionProcess::find_prev_after_head_commit(
+                        pool,
+                        session_id,
+                        target_process_id,
+                        repo.id,
+                    )
+                    .await?
+                }
+            };
+
+            let worktree_path = workspace_dir.join(&repo.name);
+            if let Some(oid) = target_oid {
+                self.git().reconcile_worktree_to_commit(
+                    &worktree_path,
+                    &oid,
+                    git::WorktreeResetOptions::new(
+                        perform_git_reset,
+                        force_when_dirty,
+                        is_dirty,
+                        perform_git_reset,
+                    ),
+                );
+            }
+        }
+
+        self.try_stop(&workspace, false).await;
+        ExecutionProcess::drop_at_and_after(pool, session_id, target_process_id).await?;
+
+        Ok(())
     }
 
     async fn try_stop(&self, workspace: &Workspace, include_dev_server: bool) {

@@ -1,12 +1,33 @@
-import { LayoutIcon, PlusIcon, SpinnerIcon } from '@phosphor-icons/react';
-import { siDiscord } from 'simple-icons';
+import {
+  LayoutIcon,
+  PlusIcon,
+  KanbanIcon,
+  SpinnerIcon,
+  StarIcon,
+} from '@phosphor-icons/react';
+import { siDiscord, siGithub } from 'simple-icons';
 import { cn } from '@/lib/utils';
 import type { OrganizationWithRole } from 'shared/types';
 import type { Project as RemoteProject } from 'shared/remote-types';
 import { AppBarButton } from './AppBarButton';
+import { AppBarSocialLink } from './AppBarSocialLink';
 import { AppBarUserPopoverContainer } from '../containers/AppBarUserPopoverContainer';
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverClose,
+} from './Popover';
 import { Tooltip } from './Tooltip';
 import { useDiscordOnlineCount } from '@/hooks/useDiscordOnlineCount';
+import { useGitHubStars } from '@/hooks/useGitHubStars';
+import { useTranslation } from 'react-i18next';
+
+function formatStarCount(count: number): string {
+  if (count < 1000) return String(count);
+  const k = count / 1000;
+  return k >= 10 ? `${Math.floor(k)}k` : `${k.toFixed(1)}k`;
+}
 
 function getProjectInitials(name: string): string {
   const trimmed = name.trim();
@@ -32,6 +53,8 @@ interface AppBarProps {
   activeProjectId: string | null;
   isSignedIn?: boolean;
   isLoadingProjects?: boolean;
+  onSignIn?: () => void;
+  onMigrate?: () => void;
 }
 
 export function AppBar({
@@ -47,8 +70,12 @@ export function AppBar({
   activeProjectId,
   isSignedIn,
   isLoadingProjects,
+  onSignIn,
+  onMigrate,
 }: AppBarProps) {
+  const { t } = useTranslation('common');
   const { data: onlineCount } = useDiscordOnlineCount();
+  const { data: starCount } = useGitHubStars();
 
   return (
     <div
@@ -66,6 +93,62 @@ export function AppBar({
           onClick={onWorkspacesClick}
         />
       </div>
+
+      {/* Project management popover for unsigned users */}
+      {!isSignedIn && (
+        <Popover>
+          <Tooltip content={t('appBar.kanban.tooltip')} side="right">
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'flex items-center justify-center w-10 h-10 rounded-lg',
+                  'transition-colors cursor-pointer',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+                  'bg-primary text-normal hover:bg-brand/10'
+                )}
+                aria-label={t('appBar.kanban.tooltip')}
+              >
+                <KanbanIcon className="size-icon-base" weight="bold" />
+              </button>
+            </PopoverTrigger>
+          </Tooltip>
+          <PopoverContent side="right" sideOffset={8}>
+            <p className="text-sm font-medium text-high">
+              {t('appBar.kanban.title')}
+            </p>
+            <p className="text-xs text-low mt-1">
+              {t('appBar.kanban.description')}
+            </p>
+            <div className="mt-base flex items-center gap-half">
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  onClick={onSignIn}
+                  className={cn(
+                    'px-base py-1 rounded-sm text-xs',
+                    'bg-brand text-on-brand hover:bg-brand-hover cursor-pointer'
+                  )}
+                >
+                  {t('signIn')}
+                </button>
+              </PopoverClose>
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  onClick={onMigrate}
+                  className={cn(
+                    'px-base py-1 rounded-sm text-xs',
+                    'bg-secondary text-normal hover:bg-panel border border-border cursor-pointer'
+                  )}
+                >
+                  {t('appBar.kanban.migrateOldProjects')}
+                </button>
+              </PopoverClose>
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
 
       {/* Loading spinner for projects */}
       {isLoadingProjects && (
@@ -122,42 +205,35 @@ export function AppBar({
         </Tooltip>
       )}
 
-      {/* Bottom section: User popover + Discord */}
-      <div className="mt-auto pt-base flex flex-col items-center gap-base">
+      {/* Bottom section: User popover + GitHub + Discord */}
+      <div className="mt-auto pt-base flex flex-col items-center gap-4">
         <AppBarUserPopoverContainer
           organizations={organizations}
           selectedOrgId={selectedOrgId}
           onOrgSelect={onOrgSelect}
           onCreateOrg={onCreateOrg}
         />
-        <Tooltip content="Join our Discord" side="right">
-          <a
-            href="https://discord.gg/AC4nwVtJM3"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              'relative flex items-center justify-center w-10 h-10 rounded-lg',
-              'text-sm font-medium transition-colors cursor-pointer',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-              'bg-primary text-normal hover:opacity-80'
-            )}
-            aria-label="Join our Discord"
-          >
-            <svg
-              className="w-5 h-5"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d={siDiscord.path} />
-            </svg>
-            {onlineCount != null && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-brand text-[10px] font-medium text-white">
-                {onlineCount > 999 ? '999+' : onlineCount}
-              </span>
-            )}
-          </a>
-        </Tooltip>
+        <AppBarSocialLink
+          href="https://github.com/BloopAI/vibe-kanban"
+          label="Star on GitHub"
+          iconPath={siGithub.path}
+          badge={
+            starCount != null && (
+              <>
+                <StarIcon size={10} weight="fill" />
+                {formatStarCount(starCount)}
+              </>
+            )
+          }
+        />
+        <AppBarSocialLink
+          href="https://discord.gg/AC4nwVtJM3"
+          label="Join our Discord"
+          iconPath={siDiscord.path}
+          badge={
+            onlineCount != null && (onlineCount > 999 ? '999+' : onlineCount)
+          }
+        />
       </div>
     </div>
   );

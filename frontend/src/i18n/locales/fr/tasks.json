@@ -283,7 +283,9 @@
       "approve": "Approuver",
       "clearReviewComments": "Effacer les commentaires de révision",
       "edit": "Modifier le message",
-      "scrollToPreviousMessage": "Go to previous message"
+      "scrollToPreviousMessage": "Go to previous message",
+      "reset": "Réinitialiser",
+      "resetTooltip": "Réinitialiser à ce point"
     },
     "approval": {
       "conflictWarning": "Les fichiers en conflit nécessitent une résolution manuelle",
@@ -316,6 +318,13 @@
       "exitCode": "Code de sortie : {{code}}",
       "completedSuccessfully": "Terminé avec succès",
       "clickToViewLogs": "Cliquer pour voir les logs"
+    },
+    "scriptPlaceholder": {
+      "setupTitle": "Script de configuration",
+      "setupDescription": "Aucun script de configuration. Les scripts de configuration s'exécutent avant le démarrage de l'agent de codage.",
+      "cleanupTitle": "Script de nettoyage",
+      "cleanupDescription": "Aucun script de nettoyage. Les scripts de nettoyage s'exécutent après la fin de l'agent de codage.",
+      "configure": "Configurer"
     },
     "updatedTodos": "À faire mis à jour",
     "viewInChangesPanel": "Voir dans le panneau des modifications",
@@ -654,9 +663,12 @@
   },
   "restoreLogsDialog": {
     "title": "Confirmer la nouvelle tentative",
+    "titleReset": "Confirmer la réinitialisation",
     "historyChange": {
       "title": "Changement d'historique",
       "willDelete": "Supprimera ce processus",
+      "willDeleteProcesses_one": "Supprimera {{count}} processus",
+      "willDeleteProcesses_other": "Supprimera {{count}} processus",
       "andLaterProcesses_one": "et {{count}} processus ultérieur",
       "andLaterProcesses_other": "et {{count}} processus ultérieurs",
       "fromHistory": "de l'historique.",
@@ -692,7 +704,8 @@
       "uncommittedPresentHint": "Modifications non commitées présentes. Activez la réinitialisation forcée ou commitez/stashez pour continuer."
     },
     "buttons": {
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "reset": "Réinitialiser"
     }
   },
   "scriptFixer": {

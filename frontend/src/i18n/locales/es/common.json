@@ -1,4 +1,7 @@
 {
+  "editorNames": {
+    "custom": "Personalizado"
+  },
   "folderPicker": {
     "legend": "Haz clic en los nombres de carpetas para navegar • Usa los botones de acción para seleccionar",
     "manualPathLabel": "Ingresar ruta manualmente:",
@@ -60,6 +63,7 @@
     "taskCompleted": "Tarea completada",
     "ran": "Ejecutó",
     "tool": "Herramienta",
+    "thinking": "Pensando",
     "toolSummary": {
       "read": "Leyó {{path}}",
       "searched": "Buscó \"{{query}}\"",
@@ -153,6 +157,7 @@
     "backToActive": "Volver a activos",
     "noArchived": "No hay espacios de trabajo archivados",
     "noWorkspaces": "Sin espacios de trabajo",
+    "newWorkspace": "Nuevo espacio de trabajo",
     "needsAttention": "Necesita Atención",
     "idle": "Inactivo",
     "running": "En Ejecución",
@@ -176,7 +181,13 @@
     "deleteConfirmMessage": "¿Estás seguro de que deseas eliminar este espacio de trabajo? Esto lo desvinculará del problema y eliminará el espacio de trabajo local. Esta acción no se puede deshacer.",
     "unlinkError": "Error al desvincular el espacio de trabajo",
     "deleteError": "Error al eliminar el espacio de trabajo",
-    "filesChanged": "{{count}} archivos"
+    "filesChanged": "{{count}} archivos",
+    "deleteDialog": {
+      "title": "Eliminar espacio de trabajo",
+      "description": "¿Estás seguro de que deseas eliminar este espacio de trabajo? Esta acción no se puede deshacer.",
+      "deleteBranchLabel": "Eliminar rama",
+      "cannotDeleteOpenPr": "No se puede eliminar la rama mientras el PR está abierto"
+    }
   },
   "fileTree": {
     "searchPlaceholder": "Buscar archivos...",
@@ -245,7 +256,9 @@
   "commandBar": {
     "noResults": "No se encontraron resultados.",
     "back": "Atrás",
-    "defaultPlaceholder": "Escribe un comando o busca..."
+    "defaultPlaceholder": "Escribe un comando o busca...",
+    "selectBranch": "Select Branch",
+    "selectBranchFor": "Select Branch for {{repoName}}"
   },
   "chatBox": {
     "variants": "Variantes",
@@ -343,6 +356,9 @@
     "tags": "Etiquetas",
     "files": "Archivos",
     "commands": "Comandos",
+    "chooseRepo": "Elegir repositorio",
+    "selectedRepo": "Repositorio seleccionado: {{repoName}}",
+    "missingRepo": "El repositorio seleccionado ya no está disponible.",
     "noTagsOrFiles": "No se encontraron etiquetas ni archivos",
     "noCommands": "No hay comandos disponibles para este agente."
   },
@@ -359,12 +375,51 @@
     "selectColorFor": "Seleccionar color para",
     "createTag": "Crear",
     "filesCount": "{{count}} Archivos",
+    "attachmentsTitle": "Adjuntos ({{count}})",
+    "deleteAttachmentAria": "Eliminar {{filename}}",
     "noPrCreated": "No se creó PR",
     "noCommentsYet": "Sin comentarios aún",
+    "createdBy": "Creado por",
     "comments": "Comentarios",
     "enterCommentPlaceholder": "Ingresa tu comentario aquí...",
+    "attachImage": "Adjuntar imagen",
+    "attachFile": "Adjuntar archivo",
+    "attachFileHint": "Adjuntar archivos (máx. 20MB por archivo)",
+    "attach": "Adjuntar",
+    "dropImagesHere": "Suelta imágenes aquí",
+    "dropFilesHere": "Suelta archivos aquí",
+    "imageDropHint": "PNG, JPG, GIF hasta 20MB",
+    "fileDropHint": "Cualquier tipo de archivo hasta 20MB",
+    "unknownFile": "Archivo desconocido",
+    "unknownUser": "Usuario desconocido",
+    "deletedUser": "Usuario eliminado",
+    "replyQuotePrefix": "escribió:",
+    "moreActions": "Más acciones",
+    "closePanel": "Cerrar panel",
+    "issueTitlePlaceholder": "Título del issue...",
+    "issueDescriptionPlaceholder": "Ingresa la descripción de la tarea...",
+    "createDraftWorkspaceImmediately": "Crear workspace borrador inmediatamente",
+    "createDraftWorkspaceDescription": "Marca para crear automáticamente un workspace",
+    "createTask": "Crear tarea",
+    "newIssue": "Nuevo issue",
+    "previewCodeBlock": "[Bloque de código]",
+    "previewImage": "[Imagen]",
+    "previewImageWithName": "[Imagen: {{name}}]",
+    "previewFile": "[Archivo]",
+    "previewFileWithName": "[Archivo: {{name}}]",
+    "imageAttachmentNameFallback": "Adjunto",
+    "removeImage": "Eliminar imagen",
+    "maxImagesAtOnce": "Máximo {{count}} imágenes a la vez",
+    "maxFilesAtOnce": "Máximo {{count}} archivos a la vez",
+    "fileNotImage": "El archivo {{filename}} no es una imagen",
+    "fileExceedsLimit": "El archivo {{filename}} supera el límite de 20MB",
+    "unknownError": "Error desconocido",
+    "failedToUploadFile": "No se pudo subir {{filename}}: {{message}}",
+    "downloadAttachment": "Descargar archivo adjunto",
+    "downloadAttachmentAria": "Descargar {{filename}}",
     "subIssues": "Subtareas",
     "noSubIssues": "Sin subtareas",
+    "markIndependentIssue": "Marcar como problema independiente",
     "parentIssue": "Padre",
     "subIssueIndicator": "↳",
     "showSubIssues": "Mostrar subtareas",
@@ -378,11 +433,46 @@
       "action": "Iniciar sesión"
     }
   },
+  "createMode": {
+    "headings": {
+      "repoStep": "¿En qué repositorios te gustaría trabajar?",
+      "chatStep": "¿En qué te gustaría trabajar?"
+    },
+    "repoPicker": {
+      "actions": {
+        "recent": "Recientes",
+        "browse": "Explorar",
+        "create": "Crear"
+      }
+    }
+  },
   "syncError": {
     "networkErrors": "Errores de red",
     "streamsAffected": "{{count}} flujo afectado",
     "streamsAffected_other": "{{count}} flujos afectados",
     "status": "(estado {{status}})",
     "refreshPage": "Actualizar página"
+  },
+  "onboardingSignIn": {
+    "subtitle": "Sign in to continue",
+    "signedInAs": "Signed in as {{name}}.",
+    "moreOptions": "More options",
+    "featureHeader": "Feature",
+    "signedInHeader": "Signed in",
+    "skipSignInHeader": "Don't sign in",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "migration": {
+    "allProjectsMigrated": "Todos tus proyectos ya han sido migrados a la nube.",
+    "continueToProjects": "Continuar a los proyectos"
+  },
+  "appBar": {
+    "kanban": {
+      "tooltip": "Kanban",
+      "title": "Tableros Kanban",
+      "description": "Inicia sesión para organizar tus agentes de codificación con tableros kanban.",
+      "migrateOldProjects": "Migrar proyectos antiguos"
+    }
   }
 }
