@@ -27,6 +27,7 @@ import { attemptsApi, repoApi } from '@/lib/api';
 import { WorkspaceContext } from '@/contexts/WorkspaceContext';
 import { SearchableDropdownContainer } from '@/components/ui-new/containers/SearchableDropdownContainer';
 import type { OpenPrInfo, GitRemote } from 'shared/types';
+import { toWorkspace } from '@/lib/routes/navigation';
 
 export interface CreateWorkspaceFromPrDialogProps {}
 
@@ -167,10 +168,6 @@ const CreateWorkspaceFromPrDialogImpl =
               throw new Error(
                 t('createWorkspaceFromPr.errors.unsupportedProvider')
               );
-            case 'repo_not_in_project':
-              throw new Error(
-                t('createWorkspaceFromPr.errors.repoNotInProject')
-              );
             default:
               throw new Error(
                 result.message ||
@@ -184,7 +181,7 @@ const CreateWorkspaceFromPrDialogImpl =
         queryClient.invalidateQueries({ queryKey: ['tasks'] });
         queryClient.invalidateQueries({ queryKey: ['workspaces'] });
         modal.hide();
-        navigate(`/workspaces/${data.workspace.id}`);
+        navigate(toWorkspace(data.workspace.id));
       },
     });
 

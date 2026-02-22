@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Group, Layout, Panel, Separator } from 'react-resizable-panels';
 import { OrgProvider, useOrgContext } from '@/contexts/remote/OrgContext';
@@ -8,6 +8,7 @@ import {
   useProjectContext,
 } from '@/contexts/remote/ProjectContext';
 import { useActions } from '@/contexts/ActionsContext';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { KanbanContainer } from '@/components/ui-new/containers/KanbanContainer';
 import { ProjectRightSidebarContainer } from '@/components/ui-new/containers/ProjectRightSidebarContainer';
 import { LoginRequiredPrompt } from '@/components/dialogs/shared/LoginRequiredPrompt';
@@ -28,7 +29,8 @@ import {
  */
 function ProjectMutationsRegistration({ children }: { children: ReactNode }) {
   const { registerProjectMutations } = useActions();
-  const { removeIssue, insertIssue, getIssue, issues } = useProjectContext();
+  const { removeIssue, insertIssue, getIssue, getAssigneesForIssue, issues } =
+    useProjectContext();
 
   // Use ref to always access latest issues (avoid stale closure)
   const issuesRef = useRef(issues);
@@ -70,18 +72,29 @@ function ProjectMutationsRegistration({ children }: { children: ReactNode }) {
           extension_metadata: issue.extension_metadata,
         });
       },
+      getIssue,
+      getAssigneesForIssue,
     });
 
     return () => {
       registerProjectMutations(null);
     };
-  }, [registerProjectMutations, removeIssue, insertIssue, getIssue]);
+  }, [
+    registerProjectMutations,
+    removeIssue,
+    insertIssue,
+    getIssue,
+    getAssigneesForIssue,
+  ]);
 
   return <>{children}</>;
 }
 
-function ProjectKanbanLayout() {
-  const { isPanelOpen } = useKanbanNavigation();
+function ProjectKanbanLayout({ projectName }: { projectName: string }) {
+  const { issueId, isPanelOpen } = useKanbanNavigation();
+  const { getIssue } = useProjectContext();
+  const issue = issueId ? getIssue(issueId) : undefined;
+  usePageTitle(issue?.title, projectName);
   const [kanbanLeftPanelSize, setKanbanLeftPanelSize] = usePaneSize(
     PERSIST_KEYS.kanbanLeftPanel,
     75
@@ -151,7 +164,7 @@ function ProjectKanbanInner({ projectId }: { projectId: string }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full w-full">
-        <p className="text-low">{t('loading')}</p>
+        <p className="text-low">{t('states.loading')}</p>
       </div>
     );
   }
@@ -167,7 +180,7 @@ function ProjectKanbanInner({ projectId }: { projectId: string }) {
   return (
     <ProjectProvider projectId={projectId}>
       <ProjectMutationsRegistration>
-        <ProjectKanbanLayout />
+        <ProjectKanbanLayout projectName={project.name} />
       </ProjectMutationsRegistration>
     </ProjectProvider>
   );
@@ -216,8 +229,7 @@ function useFindProjectById(projectId: string | undefined) {
  */
 export function ProjectKanban() {
   const { projectId, hasInvalidWorkspaceCreateDraftId } = useKanbanNavigation();
-  const [searchParams] = useSearchParams();
-  const location = useLocation();
+  const search = useSearch({ strict: false });
   const navigate = useNavigate();
   const { t } = useTranslation('common');
   const setSelectedOrgId = useOrganizationStore((s) => s.setSelectedOrgId);
@@ -230,44 +242,49 @@ export function ProjectKanban() {
     if (!projectId) return;
 
     if (hasInvalidWorkspaceCreateDraftId) {
-      navigate(buildProjectRootPath(projectId), { replace: true });
+      navigate({
+        ...buildProjectRootPath(projectId),
+        replace: true,
+      });
       return;
     }
 
-    const orgIdFromUrl = searchParams.get('orgId');
+    const orgIdFromUrl = search.orgId;
     if (orgIdFromUrl) {
       setSelectedOrgId(orgIdFromUrl);
     }
 
-    const isLegacyCreateMode = searchParams.get('mode') === 'create';
+    const isLegacyCreateMode = search.mode === 'create';
     if (isLegacyCreateMode) {
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.delete('mode');
-      nextParams.delete('orgId');
-      const nextQuery = nextParams.toString();
-      const createPath = buildIssueCreatePath(projectId);
-      navigate(nextQuery ? `${createPath}?${nextQuery}` : createPath, {
+      const nextSearch = {
+        ...search,
+        mode: undefined,
+        orgId: undefined,
+      };
+      navigate({
+        ...buildIssueCreatePath(projectId),
+        search: nextSearch,
         replace: true,
       });
       return;
     }
 
     if (orgIdFromUrl) {
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.delete('orgId');
-      const nextQuery = nextParams.toString();
-      navigate(
-        nextQuery ? `${location.pathname}?${nextQuery}` : location.pathname,
-        { replace: true }
-      );
+      navigate({
+        to: '.',
+        search: (prev) => ({
+          ...prev,
+          orgId: undefined,
+        }),
+        replace: true,
+      });
     }
   }, [
-    searchParams,
+    search,
     projectId,
     hasInvalidWorkspaceCreateDraftId,
     setSelectedOrgId,
     navigate,
-    location.pathname,
   ]);
 
   // Find the project and get its organization
@@ -279,7 +296,7 @@ export function ProjectKanban() {
   if (!authLoaded || isLoading) {
     return (
       <div className="flex items-center justify-center h-full w-full">
-        <p className="text-low">{t('loading')}</p>
+        <p className="text-low">{t('states.loading')}</p>
       </div>
     );
   }

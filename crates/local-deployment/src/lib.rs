@@ -18,7 +18,6 @@ use services::services::{
     image::ImageService,
     oauth_credentials::OAuthCredentials,
     pr_monitor::PrMonitorService,
-    project::ProjectService,
     queued_message::QueuedMessageService,
     remote_client::{RemoteClient, RemoteClientError},
     repo::RepoService,
@@ -45,7 +44,6 @@ pub struct LocalDeployment {
     analytics: Option<AnalyticsService>,
     container: LocalContainerService,
     git: GitService,
-    project: ProjectService,
     repo: RepoService,
     image: ImageService,
     filesystem: FilesystemService,
@@ -54,6 +52,7 @@ pub struct LocalDeployment {
     approvals: Approvals,
     queued_message_service: QueuedMessageService,
     remote_client: Result<RemoteClient, RemoteClientNotConfigured>,
+    shared_api_base: Option<String>,
     auth_context: AuthContext,
     oauth_handoffs: Arc<RwLock<HashMap<Uuid, PendingHandoff>>>,
     pty: PtyService,
@@ -101,7 +100,6 @@ impl Deployment for LocalDeployment {
         let user_id = generate_user_id();
         let analytics = AnalyticsConfig::new().map(AnalyticsService::new);
         let git = GitService::new();
-        let project = ProjectService::new();
         let repo = RepoService::new();
         let msg_stores = Arc::new(RwLock::new(HashMap::new()));
         let filesystem = FilesystemService::new();
@@ -146,8 +144,8 @@ impl Deployment for LocalDeployment {
             .ok()
             .or_else(|| option_env!("VK_SHARED_API_BASE").map(|s| s.to_string()));
 
-        let remote_client = match api_base {
-            Some(url) => match RemoteClient::new(&url, auth_context.clone()) {
+        let remote_client = match &api_base {
+            Some(url) => match RemoteClient::new(url, auth_context.clone()) {
                 Ok(client) => {
                     tracing::info!("Remote client initialized with URL: {}", url);
                     Ok(client)
@@ -207,7 +205,6 @@ impl Deployment for LocalDeployment {
             analytics,
             container,
             git,
-            project,
             repo,
             image,
             filesystem,
@@ -216,6 +213,7 @@ impl Deployment for LocalDeployment {
             approvals,
             queued_message_service,
             remote_client,
+            shared_api_base: api_base,
             auth_context,
             oauth_handoffs,
             pty,
@@ -248,10 +246,6 @@ impl Deployment for LocalDeployment {
         &self.git
     }
 
-    fn project(&self) -> &ProjectService {
-        &self.project
-    }
-
     fn repo(&self) -> &RepoService {
         &self.repo
     }
@@ -282,6 +276,10 @@ impl Deployment for LocalDeployment {
 
     fn auth_context(&self) -> &AuthContext {
         &self.auth_context
+    }
+
+    fn shared_api_base(&self) -> Option<String> {
+        self.shared_api_base.clone()
     }
 }
 

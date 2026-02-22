@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use axum::{
     Router,
     extract::{Path, Query, State},
@@ -5,26 +7,28 @@ use axum::{
     response::Json as ResponseJson,
     routing::{get, post},
 };
-use db::models::{
-    project::SearchResult,
-    repo::{Repo, UpdateRepo},
-};
+use db::models::repo::{Repo, SearchResult, UpdateRepo};
 use deployment::Deployment;
 use git::{GitBranch, GitRemote};
+use git_host::{GitHostError, GitHostProvider, GitHostService, OpenPrInfo, ProviderKind};
 use serde::{Deserialize, Serialize};
-use services::services::{
-    file_search::SearchQuery,
-    git_host::{GitHostError, GitHostProvider, GitHostService, OpenPrInfo, ProviderKind},
-};
+use services::services::file_search::SearchQuery;
 use ts_rs::TS;
 use utils::response::ApiResponse;
 use uuid::Uuid;
 
-use crate::{
-    DeploymentImpl,
-    error::ApiError,
-    routes::projects::{OpenEditorRequest, OpenEditorResponse},
-};
+use crate::{DeploymentImpl, error::ApiError};
+
+#[derive(serde::Deserialize)]
+pub struct OpenEditorRequest {
+    pub editor_type: Option<String>,
+    pub git_repo_path: Option<PathBuf>,
+}
+
+#[derive(Debug, serde::Serialize, ts_rs::TS)]
+pub struct OpenEditorResponse {
+    pub url: Option<String>,
+}
 
 #[derive(Debug, Deserialize, TS)]
 pub struct RegisterRepoRequest {

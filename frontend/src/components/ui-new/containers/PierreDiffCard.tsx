@@ -103,10 +103,12 @@ const PIERRE_DIFFS_THEME_CSS = `
     width: 22px !important;
   }
 
-  /* Make annotation content span full width including under line numbers */
+  /* Keep annotations full-row without inheriting long-line scroll width */
   [data-annotation-content] {
     grid-column: 1 / -1 !important;
-    width: 100% !important;
+    left: 0 !important;
+    width: var(--diffs-column-width, 100%) !important;
+    max-width: 100% !important;
   }
   
   [data-line-annotation] {
@@ -188,7 +190,6 @@ interface PierreDiffCardProps {
   diff: Diff;
   expanded: boolean;
   onToggle: () => void;
-  projectId: string;
   attemptId: string;
   className: string;
 }
@@ -209,7 +210,6 @@ export function PierreDiffCard({
   diff,
   expanded,
   onToggle,
-  projectId,
   attemptId,
   className = '',
 }: PierreDiffCardProps) {
@@ -343,7 +343,6 @@ export function PierreDiffCard({
             widgetKey={metadata.widgetKey}
             onSave={() => {}}
             onCancel={() => {}}
-            projectId={projectId}
           />
         );
       }
@@ -372,14 +371,9 @@ export function PierreDiffCard({
         );
       }
 
-      return (
-        <ReviewCommentRenderer
-          comment={metadata.comment}
-          projectId={projectId}
-        />
-      );
+      return <ReviewCommentRenderer comment={metadata.comment} />;
     },
-    [projectId, filePath, addComment, diff]
+    [filePath, addComment, diff]
   );
 
   // Handle line click to add comment
@@ -434,7 +428,7 @@ export function PierreDiffCard({
               ...(codeLine !== undefined ? { codeLine } : {}),
             });
           }}
-          title={t('comments.addReviewComment')}
+          title={t('common:comments.addReviewComment')}
         >
           <PlusIcon className="size-3.5" weight="bold" />
         </button>

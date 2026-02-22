@@ -11,9 +11,10 @@ import type {
 // UI-specific workspace type for sidebar display
 export interface SidebarWorkspace {
   id: string;
-  taskId: string;
   name: string;
   branch: string;
+  createdAt: string;
+  updatedAt: string;
   description: string;
   filesChanged?: number;
   linesAdded?: number;
@@ -54,9 +55,10 @@ function toSidebarWorkspace(
 ): SidebarWorkspace {
   return {
     id: ws.id,
-    taskId: ws.task_id,
     name: ws.name ?? ws.branch, // Use name if available, fallback to branch
     branch: ws.branch,
+    createdAt: ws.created_at,
+    updatedAt: ws.updated_at,
     description: '',
     // Use real stats from summary if available
     filesChanged: summary?.files_changed ?? undefined,

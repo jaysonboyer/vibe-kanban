@@ -1,6 +1,6 @@
 import { forwardRef, createElement } from 'react';
 import type { Icon, IconProps } from '@phosphor-icons/react';
-import type { NavigateFunction } from 'react-router-dom';
+import type { NavigateFn } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import type {
   EditorType,
@@ -13,6 +13,7 @@ import type { DiffViewMode } from '@/stores/useDiffViewStore';
 import type { LogsPanelContent } from '../containers/LogsContentContainer';
 import type { LogEntry } from '../containers/VirtualizedProcessLogs';
 import type { LayoutMode } from '@/stores/useUiPreferencesStore';
+import type { IssueCreateRouteOptions } from '@/lib/routes/projectSidebarRoutes';
 import {
   CopyIcon,
   XIcon,
@@ -62,10 +63,9 @@ import {
   RIGHT_MAIN_PANEL_MODES,
 } from '@/stores/useUiPreferencesStore';
 
-import { attemptsApi, tasksApi, repoApi } from '@/lib/api';
+import { attemptsApi, repoApi } from '@/lib/api';
 import { bulkUpdateIssues } from '@/lib/remoteApi';
 import { attemptKeys } from '@/hooks/useAttempt';
-import { taskKeys } from '@/hooks/useTask';
 import { workspaceSummaryKeys } from '@/components/ui-new/hooks/useWorkspaces';
 import { ConfirmDialog } from '@/components/ui-new/dialogs/ConfirmDialog';
 import { ChangeTargetDialog } from '@/components/ui-new/dialogs/ChangeTargetDialog';
@@ -111,11 +111,13 @@ export type DevServerState = 'stopped' | 'starting' | 'running' | 'stopping';
 export interface ProjectMutations {
   removeIssue: (id: string) => void;
   duplicateIssue: (issueId: string) => void;
+  getIssue: (issueId: string) => { simple_id: string } | undefined;
+  getAssigneesForIssue: (issueId: string) => { user_id: string }[];
 }
 
 // Context provided to action executors (from React hooks)
 export interface ActionExecutorContext {
-  navigate: NavigateFunction;
+  navigate: NavigateFn;
   queryClient: QueryClient;
   selectWorkspace: (workspaceId: string) => void;
   activeWorkspaces: SidebarWorkspace[];
@@ -142,7 +144,7 @@ export interface ActionExecutorContext {
     projectId: string,
     issueId: string,
     mode?: 'addChild' | 'setParent'
-  ) => Promise<void>;
+  ) => Promise<{ type: string } | undefined>;
   openWorkspaceSelection: (projectId: string, issueId: string) => Promise<void>;
   openRelationshipSelection: (
     projectId: string,
@@ -151,7 +153,7 @@ export interface ActionExecutorContext {
     direction: 'forward' | 'reverse'
   ) => Promise<void>;
   // Kanban navigation (URL-based)
-  navigateToCreateIssue: (options?: { statusId?: string }) => void;
+  navigateToCreateIssue: (options?: IssueCreateRouteOptions) => void;
   // Default status for issue creation based on current kanban tab
   defaultCreateStatusId?: string;
   // Current kanban context (for project settings action)
@@ -323,6 +325,21 @@ function getNextWorkspaceId(
   return null;
 }
 
+// Helper to navigate to create-issue form for a sub-issue, carrying over parent assignees
+function navigateToCreateSubIssue(
+  ctx: ActionExecutorContext,
+  parentIssueId: string
+) {
+  const assigneeIds = ctx.projectMutations
+    ?.getAssigneesForIssue(parentIssueId)
+    .map((a) => a.user_id);
+  ctx.navigateToCreateIssue({
+    statusId: ctx.defaultCreateStatusId,
+    parentIssueId,
+    assigneeIds: assigneeIds?.length ? assigneeIds : undefined,
+  });
+}
+
 // All application actions
 export const Actions = {
   // === Workspace Actions ===
@@ -334,12 +351,10 @@ export const Actions = {
     requiresTarget: ActionTargetType.WORKSPACE,
     execute: async (ctx, workspaceId) => {
       try {
-        const [workspace, firstMessage, repos] = await Promise.all([
-          getWorkspace(ctx.queryClient, workspaceId),
+        const [firstMessage, repos] = await Promise.all([
           attemptsApi.getFirstUserMessage(workspaceId),
           attemptsApi.getRepos(workspaceId),
         ]);
-        const task = await tasksApi.getById(workspace.task_id);
 
         // Find linked issue from remote workspace (synced via Electric)
         const remoteWs = ctx.remoteWorkspaces.find(
@@ -352,20 +367,21 @@ export const Actions = {
             }
           : undefined;
 
-        ctx.navigate('/workspaces/create', {
-          state: {
+        ctx.navigate({
+          to: '/workspaces/create',
+          state: (prev) => ({
+            ...prev,
             initialPrompt: firstMessage,
             preferredRepos: repos.map((r) => ({
               repo_id: r.id,
               target_branch: r.target_branch,
             })),
-            project_id: task.project_id,
             linkedIssue,
-          },
+          }),
         });
       } catch {
         // Fallback to creating without the prompt/repos
-        ctx.navigate('/workspaces/create');
+        ctx.navigate({ to: '/workspaces/create' });
       }
     },
   },
@@ -438,9 +454,17 @@ export const Actions = {
     requiresTarget: ActionTargetType.WORKSPACE,
     execute: async (ctx, workspaceId) => {
       const workspace = await getWorkspace(ctx.queryClient, workspaceId);
+
+      // Check if workspace is linked to a remote issue
+      const remoteWs = ctx.remoteWorkspaces.find(
+        (w) => w.local_workspace_id === workspaceId
+      );
+
       const result = await DeleteWorkspaceDialog.show({
         workspaceId,
         branchName: workspace.branch,
+        linkedIssueId: remoteWs?.issue_id ?? undefined,
+        linkedProjectId: remoteWs?.project_id,
       });
       if (result.action === 'confirmed') {
         // Calculate next workspace before deleting (only if deleting current)
@@ -450,7 +474,11 @@ export const Actions = {
           : null;
 
         await attemptsApi.delete(workspaceId, result.deleteBranches);
-        ctx.queryClient.invalidateQueries({ queryKey: taskKeys.all });
+
+        // Unlink from remote issue after successful deletion
+        if (result.unlinkFromIssue) {
+          await attemptsApi.unlinkFromIssue(workspaceId);
+        }
         ctx.queryClient.invalidateQueries({
           queryKey: workspaceSummaryKeys.all,
         });
@@ -460,7 +488,7 @@ export const Actions = {
           if (nextWorkspaceId) {
             ctx.selectWorkspace(nextWorkspaceId);
           } else {
-            ctx.navigate('/workspaces/create');
+            ctx.navigate({ to: '/workspaces/create' });
           }
         }
       }
@@ -493,18 +521,28 @@ export const Actions = {
           getWorkspace(ctx.queryClient, workspaceId),
           attemptsApi.getRepos(workspaceId),
         ]);
-        const task = await tasksApi.getById(workspace.task_id);
-        ctx.navigate('/workspaces/create', {
-          state: {
+        const remoteWs = ctx.remoteWorkspaces.find(
+          (w) => w.local_workspace_id === workspaceId
+        );
+        const linkedIssue = remoteWs?.issue_id
+          ? {
+              issueId: remoteWs.issue_id,
+              remoteProjectId: remoteWs.project_id,
+            }
+          : undefined;
+        ctx.navigate({
+          to: '/workspaces/create',
+          state: (prev) => ({
+            ...prev,
             preferredRepos: repos.map((r) => ({
               repo_id: r.id,
               target_branch: workspace.branch,
             })),
-            project_id: task.project_id,
-          },
+            linkedIssue,
+          }),
         });
       } catch {
-        ctx.navigate('/workspaces/create');
+        ctx.navigate({ to: '/workspaces/create' });
       }
     },
   },
@@ -517,7 +555,7 @@ export const Actions = {
     shortcut: 'G N',
     requiresTarget: ActionTargetType.NONE,
     execute: (ctx) => {
-      ctx.navigate('/workspaces/create');
+      ctx.navigate({ to: '/workspaces/create' });
     },
   },
 
@@ -592,7 +630,7 @@ export const Actions = {
       ctx.queryClient.removeQueries({ queryKey: organizationKeys.all });
       // Invalidate user-system query to update loginStatus/useAuth state
       await ctx.queryClient.invalidateQueries({ queryKey: ['user-system'] });
-      ctx.navigate('/workspaces');
+      ctx.navigate({ to: '/workspaces' });
     },
   } satisfies GlobalActionDefinition,
 
@@ -968,25 +1006,68 @@ export const Actions = {
     isVisible: (ctx) => ctx.hasWorkspace && ctx.hasGitRepos,
     execute: async (ctx, workspaceId, repoId) => {
       const workspace = await getWorkspace(ctx.queryClient, workspaceId);
-      const task = await tasksApi.getById(workspace.task_id);
 
       const repos = await attemptsApi.getRepos(workspaceId);
       const repo = repos.find((r) => r.id === repoId);
 
+      // Resolve vibe-kanban identifier from remote workspace + issue
+      let issueIdentifier: string | undefined;
+      const remoteWs = ctx.remoteWorkspaces.find(
+        (w) => w.local_workspace_id === workspaceId
+      );
+      if (remoteWs?.issue_id && ctx.projectMutations?.getIssue) {
+        const issue = ctx.projectMutations.getIssue(remoteWs.issue_id);
+        issueIdentifier = issue?.simple_id || remoteWs.issue_id;
+      }
+
       const result = await CreatePRDialog.show({
         attempt: workspace,
-        task: {
-          ...task,
-          has_in_progress_attempt: false,
-          last_attempt_failed: false,
-          executor: '',
-        },
         repoId,
         targetBranch: repo?.target_branch,
+        issueIdentifier,
       });
 
       if (!result.success && result.error) {
         throw new Error(result.error);
+      }
+    },
+  },
+
+  GitLinkPR: {
+    id: 'git-link-pr',
+    label: 'Link Pull Request',
+    icon: LinkIcon,
+    requiresTarget: ActionTargetType.GIT,
+    isVisible: (ctx) => ctx.hasWorkspace && ctx.hasGitRepos && !ctx.hasOpenPR,
+    execute: async (ctx, workspaceId, repoId) => {
+      const result = await attemptsApi.attachPr(workspaceId, {
+        repo_id: repoId,
+      });
+
+      if (result.success && result.data.pr_attached && result.data.pr_number) {
+        invalidateWorkspaceQueries(ctx.queryClient, workspaceId);
+        ctx.queryClient.invalidateQueries({
+          queryKey: ['branch-status'],
+        });
+
+        await ConfirmDialog.show({
+          title: 'Pull Request Linked',
+          message: `Linked PR #${result.data.pr_number}${result.data.pr_url ? ` — ${result.data.pr_url}` : ''}`,
+          confirmText: 'OK',
+          showCancelButton: false,
+          variant: 'success',
+        });
+      } else if (result.success && !result.data.pr_attached) {
+        await ConfirmDialog.show({
+          title: 'No Pull Request Found',
+          message:
+            'No open pull request was found matching this branch. Make sure a PR exists for this branch on the remote.',
+          confirmText: 'OK',
+          showCancelButton: false,
+          variant: 'info',
+        });
+      } else if (!result.success) {
+        throw new Error(result.message || 'Failed to attach PR');
       }
     },
   },
@@ -1187,8 +1268,13 @@ export const Actions = {
     icon: GearIcon,
     requiresTarget: ActionTargetType.GIT,
     isVisible: (ctx) => ctx.hasWorkspace && ctx.hasGitRepos,
-    execute: (ctx, _workspaceId, repoId) => {
-      ctx.navigate(`/settings/repos?repoId=${repoId}`);
+    execute: async (_ctx, _workspaceId, repoId) => {
+      await SettingsDialog.show({
+        initialSection: 'repos',
+        initialState: {
+          repoId,
+        },
+      });
     },
   },
 
@@ -1387,9 +1473,29 @@ export const Actions = {
     isVisible: (ctx) =>
       ctx.layoutMode === 'kanban' && ctx.hasSelectedKanbanIssue,
     execute: async (ctx, projectId, issueIds) => {
-      if (issueIds.length === 1) {
-        await ctx.openSubIssueSelection(projectId, issueIds[0], 'addChild');
+      if (issueIds.length !== 1) return;
+      const parentIssueId = issueIds[0];
+      const result = await ctx.openSubIssueSelection(
+        projectId,
+        parentIssueId,
+        'addChild'
+      );
+      if (result?.type === 'createNew') {
+        navigateToCreateSubIssue(ctx, parentIssueId);
       }
+    },
+  } satisfies IssueActionDefinition,
+
+  CreateSubIssue: {
+    id: 'create-sub-issue',
+    label: 'Create Sub-issue',
+    icon: PlusIcon,
+    requiresTarget: ActionTargetType.ISSUE,
+    isVisible: (ctx) =>
+      ctx.layoutMode === 'kanban' && ctx.hasSelectedKanbanIssue,
+    execute: async (ctx, _projectId, issueIds) => {
+      if (issueIds.length !== 1) return;
+      navigateToCreateSubIssue(ctx, issueIds[0]);
     },
   } satisfies IssueActionDefinition,
 

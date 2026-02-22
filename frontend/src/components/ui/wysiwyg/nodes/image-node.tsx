@@ -5,12 +5,12 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { Download, File, HelpCircle, Loader2, X } from 'lucide-react';
 import {
   useTaskAttemptId,
-  useTaskId,
   useLocalImages,
 } from '../context/task-attempt-context';
 import { useImageMetadata } from '@/hooks/useImageMetadata';
 import { useAttachmentUrl } from '@/hooks/useAttachmentUrl';
 import { ImagePreviewDialog } from '@/components/dialogs/wysiwyg/ImagePreviewDialog';
+import { downloadBlobUrl } from '@/lib/attachmentUtils';
 import { formatFileSize } from '@/lib/utils';
 import {
   createDecoratorNode,
@@ -49,7 +49,6 @@ function ImageComponent({
   const { t } = useTranslation('common');
   const { src, altText } = data;
   const taskAttemptId = useTaskAttemptId();
-  const taskId = useTaskId();
   const localImages = useLocalImages();
   const [editor] = useLexicalComposerContext();
 
@@ -65,12 +64,10 @@ function ImageComponent({
   const { url: fullSizeUrl } = useAttachmentUrl(attachmentId, 'file');
 
   // Use TanStack Query for caching metadata across component recreations
-  // Pass both taskAttemptId and taskId - the hook prefers taskAttemptId when available
   // Also pass localImages for immediate rendering of newly uploaded images
   const { data: metadata, isLoading: loading } = useImageMetadata(
     taskAttemptId,
     src,
-    taskId,
     localImages
   );
 
@@ -109,28 +106,9 @@ function ImageComponent({
 
       if (!fullSizeUrl) return;
 
-      fetch(fullSizeUrl, { method: 'GET', mode: 'cors', credentials: 'omit' })
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error('Failed to download attachment file');
-          }
-
-          const blob = await response.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          try {
-            const anchor = document.createElement('a');
-            anchor.href = objectUrl;
-            anchor.download = altText || 'attachment';
-            document.body.appendChild(anchor);
-            anchor.click();
-            document.body.removeChild(anchor);
-          } finally {
-            URL.revokeObjectURL(objectUrl);
-          }
-        })
-        .catch((error) => {
-          console.error('Failed to download attachment:', error);
-        });
+      downloadBlobUrl(fullSizeUrl, altText || 'attachment').catch((error) => {
+        console.error('Failed to download attachment:', error);
+      });
     },
     [fullSizeUrl, altText]
   );
@@ -157,8 +135,8 @@ function ImageComponent({
   let displayName: string;
   let metadataLine: string | null = null;
 
-  // Check if we have context for fetching metadata (either taskAttemptId or taskId)
-  const hasContext = !!taskAttemptId || !!taskId;
+  // Check if we have context for fetching metadata
+  const hasContext = !!taskAttemptId;
   // Check if image exists in local images (for create mode where no task context exists yet)
   const hasLocalImage = localImages.some((img) => img.path === src);
 

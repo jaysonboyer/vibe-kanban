@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { AppWithStyleOverride } from '@/utils/StyleOverride';
 import { WebviewContextMenu } from '@/vscode/ContextMenu';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { SessionChatBoxContainer } from '@/components/ui-new/containers/SessionChatBoxContainer';
 import {
   ConversationList,
@@ -31,6 +32,8 @@ export function VSCodeWorkspacePage() {
     isNewSessionMode,
     startNewSession,
   } = useWorkspaceContext();
+
+  usePageTitle(workspace?.name);
 
   const workspaceWithSession = workspace
     ? createWorkspaceWithSession(workspace, selectedSession)
@@ -98,7 +101,6 @@ export function VSCodeWorkspacePage() {
                             mode: 'placeholder',
                           })}
                     sessions={sessions}
-                    projectId={undefined}
                     filesChanged={diffStats.files_changed}
                     linesAdded={diffStats.lines_added}
                     linesRemoved={diffStats.lines_removed}

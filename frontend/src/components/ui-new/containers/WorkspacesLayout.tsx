@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from '@tanstack/react-router';
 import { Group, Layout, Panel, Separator } from 'react-resizable-panels';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { ExecutionProcessesProvider } from '@/contexts/ExecutionProcessesContext';
 import { CreateModeProvider } from '@/contexts/CreateModeContext';
 import { ReviewProvider } from '@/contexts/ReviewProvider';
-import { LogsPanelProvider } from '@/contexts/LogsPanelContext';
 import { ChangesViewProvider } from '@/contexts/ChangesViewContext';
 import { WorkspacesSidebarContainer } from '@/components/ui-new/containers/WorkspacesSidebarContainer';
 import { LogsContentContainer } from '@/components/ui-new/containers/LogsContentContainer';
@@ -25,10 +27,12 @@ import {
   useWorkspacePanelState,
   RIGHT_MAIN_PANEL_MODES,
 } from '@/stores/useUiPreferencesStore';
+import { toWorkspace } from '@/lib/routes/navigation';
 
 const WORKSPACES_GUIDE_ID = 'workspaces-guide';
 
 export function WorkspacesLayout() {
+  const navigate = useNavigate();
   const {
     workspaceId,
     workspace: selectedWorkspace,
@@ -43,11 +47,23 @@ export function WorkspacesLayout() {
     startNewSession,
   } = useWorkspaceContext();
 
+  const { t } = useTranslation('common');
+  usePageTitle(
+    isCreateMode ? t('workspaces.newWorkspace') : selectedWorkspace?.name
+  );
+
   const mainContainerRef = useRef<WorkspacesMainContainerHandle>(null);
 
   const handleScrollToBottom = useCallback(() => {
     mainContainerRef.current?.scrollToBottom();
   }, []);
+
+  const handleWorkspaceCreated = useCallback(
+    (workspaceId: string) => {
+      navigate(toWorkspace(workspaceId));
+    },
+    [navigate]
+  );
 
   // Use workspace-specific panel state (pass undefined when in create mode)
   const {
@@ -115,84 +131,84 @@ export function WorkspacesLayout() {
 
   const mainContent = (
     <ReviewProvider attemptId={selectedWorkspace?.id}>
-      <LogsPanelProvider>
-        <ChangesViewProvider>
-          <div className="flex h-full">
-            <Group
-              orientation="horizontal"
-              className="flex-1 min-w-0 h-full"
-              defaultLayout={defaultLayout}
-              onLayoutChange={onLayoutChange}
-            >
-              {isLeftMainPanelVisible && (
-                <Panel
-                  id="left-main"
-                  minSize="20%"
-                  className="min-w-0 h-full overflow-hidden"
-                >
-                  {isCreateMode ? (
-                    <CreateChatBoxContainer onWorkspaceCreated={null} />
-                  ) : (
-                    <WorkspacesMainContainer
-                      ref={mainContainerRef}
-                      selectedWorkspace={selectedWorkspace ?? null}
-                      selectedSession={selectedSession}
-                      sessions={sessions}
-                      onSelectSession={selectSession}
-                      isLoading={isLoading}
-                      isNewSessionMode={isNewSessionMode}
-                      onStartNewSession={startNewSession}
+      <ChangesViewProvider>
+        <div className="flex h-full">
+          <Group
+            orientation="horizontal"
+            className="flex-1 min-w-0 h-full"
+            defaultLayout={defaultLayout}
+            onLayoutChange={onLayoutChange}
+          >
+            {isLeftMainPanelVisible && (
+              <Panel
+                id="left-main"
+                minSize="20%"
+                className="min-w-0 h-full overflow-hidden"
+              >
+                {isCreateMode ? (
+                  <CreateChatBoxContainer
+                    onWorkspaceCreated={handleWorkspaceCreated}
+                  />
+                ) : (
+                  <WorkspacesMainContainer
+                    ref={mainContainerRef}
+                    selectedWorkspace={selectedWorkspace ?? null}
+                    selectedSession={selectedSession}
+                    sessions={sessions}
+                    onSelectSession={selectSession}
+                    isLoading={isLoading}
+                    isNewSessionMode={isNewSessionMode}
+                    onStartNewSession={startNewSession}
+                  />
+                )}
+              </Panel>
+            )}
+
+            {isLeftMainPanelVisible && rightMainPanelMode !== null && (
+              <Separator
+                id="main-separator"
+                className="w-1 bg-transparent hover:bg-brand/50 transition-colors cursor-col-resize"
+              />
+            )}
+
+            {rightMainPanelMode !== null && (
+              <Panel
+                id="right-main"
+                minSize="20%"
+                className="min-w-0 h-full overflow-hidden"
+              >
+                {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.CHANGES &&
+                  selectedWorkspace?.id && (
+                    <ChangesPanelContainer
+                      className=""
+                      attemptId={selectedWorkspace.id}
                     />
                   )}
-                </Panel>
-              )}
-
-              {isLeftMainPanelVisible && rightMainPanelMode !== null && (
-                <Separator
-                  id="main-separator"
-                  className="w-1 bg-transparent hover:bg-brand/50 transition-colors cursor-col-resize"
-                />
-              )}
-
-              {rightMainPanelMode !== null && (
-                <Panel
-                  id="right-main"
-                  minSize="20%"
-                  className="min-w-0 h-full overflow-hidden"
-                >
-                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.CHANGES &&
-                    selectedWorkspace?.id && (
-                      <ChangesPanelContainer
-                        className=""
-                        attemptId={selectedWorkspace.id}
-                      />
-                    )}
-                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.LOGS && (
-                    <LogsContentContainer className="" />
+                {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.LOGS && (
+                  <LogsContentContainer className="" />
+                )}
+                {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.PREVIEW &&
+                  selectedWorkspace?.id && (
+                    <PreviewBrowserContainer
+                      attemptId={selectedWorkspace.id}
+                      className=""
+                    />
                   )}
-                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.PREVIEW &&
-                    selectedWorkspace?.id && (
-                      <PreviewBrowserContainer
-                        attemptId={selectedWorkspace.id}
-                        className=""
-                      />
-                    )}
-                </Panel>
-              )}
-            </Group>
-
-            {isRightSidebarVisible && !isCreateMode && (
-              <div className="w-[300px] shrink-0 h-full overflow-hidden">
-                <RightSidebar
-                  rightMainPanelMode={rightMainPanelMode}
-                  selectedWorkspace={selectedWorkspace}
-                  repos={repos}
-                />
-              </div>
+              </Panel>
             )}
-          </div>
-        </ChangesViewProvider>
-      </LogsPanelProvider>
+          </Group>
+
+          {isRightSidebarVisible && !isCreateMode && (
+            <div className="w-[300px] shrink-0 h-full overflow-hidden">
+              <RightSidebar
+                rightMainPanelMode={rightMainPanelMode}
+                selectedWorkspace={selectedWorkspace}
+                repos={repos}
+              />
+            </div>
+          )}
+        </div>
+      </ChangesViewProvider>
     </ReviewProvider>
   );
 

@@ -1,18 +1,12 @@
 import {
   useRef,
   useEffect,
-  useMemo,
   useCallback,
   useState,
   type ReactNode,
   type MouseEvent,
   type CSSProperties,
 } from 'react';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/components/ui-new/primitives/Popover';
 
 // --- Headless Compound Components ---
 
@@ -21,11 +15,14 @@ type VerticalSide = 'top' | 'bottom';
 interface TypeaheadPlacement {
   side: VerticalSide;
   maxHeight: number;
+  left: number;
+  top: number;
 }
 
 const VIEWPORT_PADDING = 16;
 const MENU_SIDE_OFFSET = 8;
 const MAX_MENU_HEIGHT = 360;
+const MAX_MENU_WIDTH = 370;
 const MIN_RENDERED_MENU_HEIGHT = 96;
 const FLIP_HYSTERESIS_PX = 72;
 
@@ -33,10 +30,13 @@ function getViewportHeight() {
   return window.visualViewport?.height ?? window.innerHeight;
 }
 
-function getAvailableVerticalSpace(anchorRect: DOMRect) {
+function getAvailableVerticalSpace(anchorRect: DOMRect, editorRect?: DOMRect) {
   const viewportHeight = getViewportHeight();
+  // When an editor rect is available, measure space above the entire editor
+  // input so the menu doesn't overlap earlier lines of text.
+  const topEdge = editorRect ? editorRect.top : anchorRect.top;
   return {
-    above: anchorRect.top - VIEWPORT_PADDING - MENU_SIDE_OFFSET,
+    above: topEdge - VIEWPORT_PADDING - MENU_SIDE_OFFSET,
     below:
       viewportHeight - anchorRect.bottom - VIEWPORT_PADDING - MENU_SIDE_OFFSET,
   };
@@ -75,41 +75,79 @@ function clampMenuHeight(height: number) {
 
 function getPlacement(
   anchorEl: HTMLElement,
-  previousSide?: VerticalSide
+  previousSide?: VerticalSide,
+  editorEl?: HTMLElement | null
 ): TypeaheadPlacement {
   const anchorRect = anchorEl.getBoundingClientRect();
-  const { above, below } = getAvailableVerticalSpace(anchorRect);
+  const editorRect = editorEl?.getBoundingClientRect();
+  const { above, below } = getAvailableVerticalSpace(anchorRect, editorRect);
   const side = chooseStableSide(previousSide, above, below);
   const rawHeight = side === 'bottom' ? below : above;
+
+  // Horizontal: align to anchor left, but shift left if it would overflow
+  const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+  const rightOverflow =
+    anchorRect.left + MAX_MENU_WIDTH - viewportWidth + VIEWPORT_PADDING;
+  const left =
+    rightOverflow > 0 ? anchorRect.left - rightOverflow : anchorRect.left;
+
+  // Vertical: below the anchor or above the editor (if available)
+  let top: number;
+  if (side === 'bottom') {
+    top = anchorRect.bottom + MENU_SIDE_OFFSET;
+  } else {
+    // Position above the editor top edge (or anchor if no editor)
+    const topEdge = editorRect ? editorRect.top : anchorRect.top;
+    top = topEdge - MENU_SIDE_OFFSET;
+  }
 
   return {
     side,
     maxHeight: clampMenuHeight(rawHeight),
+    left,
+    top,
   };
 }
 
 interface TypeaheadMenuProps {
   anchorEl: HTMLElement;
+  editorEl?: HTMLElement | null;
+  onClickOutside?: () => void;
   children: ReactNode;
 }
 
-function TypeaheadMenuRoot({ anchorEl, children }: TypeaheadMenuProps) {
+function TypeaheadMenuRoot({
+  anchorEl,
+  editorEl,
+  onClickOutside,
+  children,
+}: TypeaheadMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<TypeaheadPlacement>(() =>
-    getPlacement(anchorEl)
+    getPlacement(anchorEl, undefined, editorEl)
   );
 
   const syncPlacement = useCallback(() => {
     setPlacement((previous) => {
-      const next = getPlacement(anchorEl, previous.side);
+      const next = getPlacement(anchorEl, previous.side, editorEl);
+      const maxHeightStable =
+        Math.abs(next.maxHeight - previous.maxHeight) < 10;
+      const leftStable = Math.abs(next.left - previous.left) < 2;
+      // Use a line-height–sized tolerance for vertical position so that
+      // sub-pixel anchor movements within the same line don't cause updates.
+      // The position only needs to change on line wraps (~20px jump).
+      const topStable = Math.abs(next.top - previous.top) < 10;
       if (
         next.side === previous.side &&
-        next.maxHeight === previous.maxHeight
+        maxHeightStable &&
+        leftStable &&
+        topStable
       ) {
         return previous;
       }
       return next;
     });
-  }, [anchorEl]);
+  }, [anchorEl, editorEl]);
 
   useEffect(() => {
     syncPlacement();
@@ -120,52 +158,75 @@ function TypeaheadMenuRoot({ anchorEl, children }: TypeaheadMenuProps) {
 
     window.addEventListener('resize', updateOnFrame);
     window.addEventListener('scroll', updateOnFrame, true);
-    const observer = new ResizeObserver(updateOnFrame);
-    observer.observe(anchorEl);
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', updateOnFrame);
+      vv.addEventListener('scroll', updateOnFrame);
+    }
 
     return () => {
       window.removeEventListener('resize', updateOnFrame);
       window.removeEventListener('scroll', updateOnFrame, true);
-      observer.disconnect();
+      if (vv) {
+        vv.removeEventListener('resize', updateOnFrame);
+        vv.removeEventListener('scroll', updateOnFrame);
+      }
     };
   }, [anchorEl, syncPlacement]);
 
-  // Reposition during normal React renders too (e.g. typeahead cursor movement).
+  // Click-outside detection
   useEffect(() => {
-    syncPlacement();
-  });
+    if (!onClickOutside) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      const menu = menuRef.current;
+      if (menu && !menu.contains(e.target as Node)) {
+        onClickOutside();
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [onClickOutside]);
 
-  const contentStyle = useMemo(
-    () =>
-      ({
-        '--typeahead-menu-max-height': `${placement.maxHeight}px`,
-      }) as CSSProperties,
-    [placement.maxHeight]
-  );
+  // When side is 'top' the menu grows upward — use bottom-anchored positioning
+  // so the menu expands upward from a fixed bottom edge.
+  const style =
+    placement.side === 'bottom'
+      ? ({
+          position: 'fixed',
+          left: placement.left,
+          top: placement.top,
+          '--typeahead-menu-max-height': `${placement.maxHeight}px`,
+        } as CSSProperties)
+      : ({
+          position: 'fixed',
+          left: placement.left,
+          bottom: getViewportHeight() - placement.top,
+          '--typeahead-menu-max-height': `${placement.maxHeight}px`,
+        } as CSSProperties);
 
   return (
-    <Popover open>
-      <PopoverAnchor virtualRef={{ current: anchorEl }} />
-      <PopoverContent
-        side={placement.side}
-        align="start"
-        sideOffset={MENU_SIDE_OFFSET}
-        avoidCollisions={false}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onCloseAutoFocus={(e) => e.preventDefault()}
-        style={contentStyle}
-        className="w-auto min-w-80 max-w-[370px] p-0 overflow-hidden !bg-background"
-      >
-        {children}
-      </PopoverContent>
-    </Popover>
+    <div
+      ref={menuRef}
+      style={style as CSSProperties}
+      className="z-[10000] w-auto min-w-80 max-w-[370px] p-0 overflow-hidden bg-panel border border-border rounded-sm shadow-md flex flex-col"
+    >
+      {children}
+    </div>
   );
 }
 
-function TypeaheadMenuHeader({ children }: { children: ReactNode }) {
+function TypeaheadMenuHeader({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="px-3 py-2 border-b bg-muted/30">
-      <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+    <div
+      className={`px-base py-half border-b border-border ${className ?? ''}`}
+    >
+      <div className="flex items-center gap-half text-xs font-medium text-low">
         {children}
       </div>
     </div>
@@ -175,8 +236,8 @@ function TypeaheadMenuHeader({ children }: { children: ReactNode }) {
 function TypeaheadMenuScrollArea({ children }: { children: ReactNode }) {
   return (
     <div
-      className="py-1 overflow-auto"
-      style={{ maxHeight: 'var(--typeahead-menu-max-height, 40vh)' }}
+      className="py-half overflow-auto flex-1 min-h-0"
+      style={{ maxHeight: 'var(--typeahead-menu-max-height, 360px)' }}
     >
       {children}
     </div>
@@ -185,20 +246,18 @@ function TypeaheadMenuScrollArea({ children }: { children: ReactNode }) {
 
 function TypeaheadMenuSectionHeader({ children }: { children: ReactNode }) {
   return (
-    <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase">
+    <div className="px-base py-half text-xs font-medium text-low">
       {children}
     </div>
   );
 }
 
 function TypeaheadMenuDivider() {
-  return <div className="border-t my-1" />;
+  return <div className="h-px bg-border my-half" />;
 }
 
 function TypeaheadMenuEmpty({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-3 py-2 text-sm text-muted-foreground">{children}</div>
-  );
+  return <div className="px-base py-half text-sm text-low">{children}</div>;
 }
 
 interface TypeaheadMenuActionProps {
@@ -215,8 +274,7 @@ function TypeaheadMenuAction({
   return (
     <button
       type="button"
-      className="w-full px-3 py-2 text-left text-sm border-l-2 border-l-transparent text-muted-foreground hover:bg-muted hover:text-high disabled:opacity-50 disabled:cursor-not-allowed"
-      onMouseDown={(event) => event.preventDefault()}
+      className="w-full px-base py-half text-left text-sm text-low hover:bg-secondary hover:text-high transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       onClick={onClick}
       disabled={disabled}
     >
@@ -261,10 +319,8 @@ function TypeaheadMenuItemComponent({
   return (
     <div
       ref={ref}
-      className={`px-3 py-2 cursor-pointer text-sm border-l-2 ${
-        isSelected
-          ? 'bg-secondary border-l-brand text-high'
-          : 'hover:bg-muted border-l-transparent text-muted-foreground'
+      className={`px-base py-half rounded-sm cursor-pointer text-sm transition-colors ${
+        isSelected ? 'bg-secondary text-high' : 'hover:bg-secondary text-normal'
       }`}
       onMouseMove={handleMouseMove}
       onClick={onClick}

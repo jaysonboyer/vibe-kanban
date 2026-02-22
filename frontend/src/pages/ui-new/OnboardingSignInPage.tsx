@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckIcon, XIcon } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from '@tanstack/react-router';
 import { ThemeMode } from 'shared/types';
 import {
   OAuthDialog,
@@ -12,9 +12,10 @@ import { useUserSystem } from '@/components/ConfigProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import { OAuthSignInButton } from '@/components/ui-new/primitives/OAuthButtons';
 import { PrimaryButton } from '@/components/ui-new/primitives/PrimaryButton';
-import { attemptsApi } from '@/lib/api';
 import { getFirstProjectDestination } from '@/lib/firstProjectDestination';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { resolveAppPath } from '@/lib/routes/pathResolution';
+import { toWorkspacesCreate } from '@/lib/routes/navigation';
 
 const COMPARISON_ROWS = [
   {
@@ -63,16 +64,6 @@ function resolveTheme(theme: ThemeMode): 'light' | 'dark' {
   return theme === ThemeMode.DARK ? 'dark' : 'light';
 }
 
-async function hasActiveWorkspaceAttempts(): Promise<boolean> {
-  try {
-    const workspaces = await attemptsApi.getAllWorkspaces();
-    return workspaces.length > 0;
-  } catch (error) {
-    console.error('Failed to load workspaces for onboarding redirect:', error);
-    return false;
-  }
-}
-
 export function OnboardingSignInPage() {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
@@ -117,24 +108,13 @@ export function OnboardingSignInPage() {
     hasTrackedStageViewRef.current = true;
   }, [config, isLoggedIn, loading, trackRemoteOnboardingEvent]);
 
-  const getOnboardingDestination = async (
-    preferProjectRedirect: boolean
-  ): Promise<string> => {
-    if (!preferProjectRedirect) {
-      return '/workspaces/create';
-    }
-
-    if (await hasActiveWorkspaceAttempts()) {
-      return '/migrate';
-    }
-
+  const getOnboardingDestination = async (): Promise<string> => {
     const firstProjectDestination =
       await getFirstProjectDestination(setSelectedOrgId);
     if (!firstProjectDestination) {
       trackRemoteOnboardingEvent(REMOTE_ONBOARDING_EVENTS.STAGE_FAILED, {
         stage: 'sign_in',
         reason: 'destination_lookup_failed',
-        prefer_project_redirect: preferProjectRedirect,
       });
       return '/workspaces/create';
     }
@@ -144,16 +124,13 @@ export function OnboardingSignInPage() {
 
   const finishOnboarding = async (options: {
     method: SignInCompletionMethod;
-    preferProjectRedirect?: boolean;
   }) => {
     if (!config || saving || isCompletingOnboardingRef.current) return;
 
-    const preferProjectRedirect = options.preferProjectRedirect ?? isLoggedIn;
     trackRemoteOnboardingEvent(REMOTE_ONBOARDING_EVENTS.STAGE_SUBMITTED, {
       stage: 'sign_in',
       method: options.method,
       is_logged_in: isLoggedIn,
-      prefer_project_redirect: preferProjectRedirect,
     });
 
     isCompletingOnboardingRef.current = true;
@@ -175,13 +152,16 @@ export function OnboardingSignInPage() {
       return;
     }
 
-    const destination = await getOnboardingDestination(preferProjectRedirect);
+    const destination = await getOnboardingDestination();
     trackRemoteOnboardingEvent(REMOTE_ONBOARDING_EVENTS.STAGE_COMPLETED, {
       stage: 'sign_in',
       method: options.method,
       destination,
     });
-    navigate(destination, { replace: true });
+    navigate({
+      ...(resolveAppPath(destination) ?? toWorkspacesCreate()),
+      replace: true,
+    });
   };
 
   const handleProviderSignIn = async (provider: OAuthProvider) => {
@@ -204,7 +184,6 @@ export function OnboardingSignInPage() {
 
     if (profile) {
       await finishOnboarding({
-        preferProjectRedirect: true,
         method: provider === 'github' ? 'oauth_github' : 'oauth_google',
       });
     }

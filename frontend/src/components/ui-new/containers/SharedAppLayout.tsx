@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DropResult } from '@hello-pangea/dnd';
+import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { SyncErrorProvider } from '@/contexts/SyncErrorContext';
 
 import { NavbarContainer } from './NavbarContainer';
 import { AppBar } from '../primitives/AppBar';
 import { useUserOrganizations } from '@/hooks/useUserOrganizations';
-import { useOrganizationProjects } from '@/hooks/useOrganizationProjects';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useAuth } from '@/hooks/auth/useAuth';
+import {
+  buildProjectRootPath,
+  parseProjectSidebarRoute,
+} from '@/lib/routes/projectSidebarRoutes';
 import {
   CreateOrganizationDialog,
   type CreateOrganizationResult,
@@ -17,6 +21,15 @@ import {
 import { OAuthDialog } from '@/components/dialogs/global/OAuthDialog';
 import { CommandBarDialog } from '@/components/ui-new/dialogs/CommandBarDialog';
 import { useCommandBarShortcut } from '@/hooks/useCommandBarShortcut';
+import { useShape } from '@/lib/electric/hooks';
+import { sortProjectsByOrder } from '@/lib/projectOrder';
+import { resolveAppPath } from '@/lib/routes/pathResolution';
+import {
+  PROJECT_MUTATION,
+  PROJECTS_SHAPE,
+  type Project as RemoteProject,
+} from 'shared/remote-types';
+import { toMigrate, toProject, toWorkspaces } from '@/lib/routes/navigation';
 
 export function SharedAppLayout() {
   const navigate = useNavigate();
@@ -37,6 +50,7 @@ export function SharedAppLayout() {
   const selectedOrgId = useOrganizationStore((s) => s.selectedOrgId);
   const setSelectedOrgId = useOrganizationStore((s) => s.setSelectedOrgId);
   const prevOrgIdRef = useRef<string | null>(null);
+  const projectLastPathRef = useRef<Record<string, string>>({});
 
   // Auto-select first org if none selected or selection is invalid
   useEffect(() => {
@@ -52,11 +66,34 @@ export function SharedAppLayout() {
     }
   }, [organizations, selectedOrgId, setSelectedOrgId]);
 
-  const { data: orgProjects = [], isLoading } = useOrganizationProjects(
-    selectedOrgId || null
+  const projectParams = useMemo(
+    () => ({ organization_id: selectedOrgId || '' }),
+    [selectedOrgId]
   );
+  const {
+    data: orgProjects = [],
+    isLoading,
+    updateMany: updateManyProjects,
+  } = useShape(PROJECTS_SHAPE, projectParams, {
+    enabled: isSignedIn && !!selectedOrgId,
+    mutation: PROJECT_MUTATION,
+  });
+  const sortedProjects = useMemo(
+    () => sortProjectsByOrder(orgProjects),
+    [orgProjects]
+  );
+  const [orderedProjects, setOrderedProjects] =
+    useState<RemoteProject[]>(sortedProjects);
+  const [isSavingProjectOrder, setIsSavingProjectOrder] = useState(false);
 
-  // Navigate to latest project when org changes
+  useEffect(() => {
+    if (isSavingProjectOrder) {
+      return;
+    }
+    setOrderedProjects(sortedProjects);
+  }, [isSavingProjectOrder, sortedProjects]);
+
+  // Navigate to the first ordered project when org changes
   useEffect(() => {
     // Skip auto-navigation when on migration flow
     if (isMigrateRoute) {
@@ -70,20 +107,16 @@ export function SharedAppLayout() {
       selectedOrgId &&
       !isLoading
     ) {
-      if (orgProjects.length > 0) {
-        const sortedProjects = [...orgProjects].sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        navigate(`/projects/${sortedProjects[0].id}`);
+      if (sortedProjects.length > 0) {
+        navigate(toProject(sortedProjects[0].id));
       } else {
-        navigate('/workspaces');
+        navigate(toWorkspaces());
       }
       prevOrgIdRef.current = selectedOrgId;
     } else if (prevOrgIdRef.current === null && selectedOrgId) {
       prevOrgIdRef.current = selectedOrgId;
     }
-  }, [selectedOrgId, orgProjects, isLoading, navigate, isMigrateRoute]);
+  }, [selectedOrgId, sortedProjects, isLoading, navigate, isMigrateRoute]);
 
   // Navigation state for AppBar active indicators
   const isWorkspacesActive = location.pathname.startsWith('/workspaces');
@@ -91,15 +124,74 @@ export function SharedAppLayout() {
     ? location.pathname.split('/')[2]
     : null;
 
+  // Remember the last visited route for each project so AppBar clicks can
+  // reopen the previous issue/workspace selection.
+  useEffect(() => {
+    const route = parseProjectSidebarRoute(location.pathname);
+    if (!route) {
+      return;
+    }
+
+    const pathWithSearch = `${location.pathname}${location.searchStr}`;
+    projectLastPathRef.current[route.projectId] = pathWithSearch;
+  }, [location.pathname, location.searchStr]);
+
   const handleWorkspacesClick = useCallback(() => {
-    navigate('/workspaces');
+    navigate(toWorkspaces());
   }, [navigate]);
 
   const handleProjectClick = useCallback(
     (projectId: string) => {
-      navigate(`/projects/${projectId}`);
+      const rememberedPath = projectLastPathRef.current[projectId];
+      if (rememberedPath) {
+        const resolvedPath = resolveAppPath(rememberedPath);
+        if (resolvedPath) {
+          navigate(resolvedPath);
+          return;
+        }
+      }
+
+      navigate(buildProjectRootPath(projectId));
     },
     [navigate]
+  );
+
+  const handleProjectsDragEnd = useCallback(
+    async ({ source, destination }: DropResult) => {
+      if (isSavingProjectOrder) {
+        return;
+      }
+      if (!destination || source.index === destination.index) {
+        return;
+      }
+
+      const previousOrder = orderedProjects;
+      const reordered = [...orderedProjects];
+      const [moved] = reordered.splice(source.index, 1);
+
+      if (!moved) {
+        return;
+      }
+
+      reordered.splice(destination.index, 0, moved);
+      setOrderedProjects(reordered);
+      setIsSavingProjectOrder(true);
+
+      try {
+        await updateManyProjects(
+          reordered.map((project, index) => ({
+            id: project.id,
+            changes: { sort_order: index },
+          }))
+        ).persisted;
+      } catch (error) {
+        console.error('Failed to reorder projects:', error);
+        setOrderedProjects(previousOrder);
+      } finally {
+        setIsSavingProjectOrder(false);
+      }
+    },
+    [isSavingProjectOrder, orderedProjects, updateManyProjects]
   );
 
   const handleCreateOrg = useCallback(async () => {
@@ -123,7 +215,7 @@ export function SharedAppLayout() {
         await CreateRemoteProjectDialog.show({ organizationId: selectedOrgId });
 
       if (result.action === 'created' && result.project) {
-        navigate(`/projects/${result.project.id}`);
+        navigate(toProject(result.project.id));
       }
     } catch {
       // Dialog cancelled
@@ -143,13 +235,13 @@ export function SharedAppLayout() {
       try {
         const profile = await OAuthDialog.show({});
         if (profile) {
-          navigate('/migrate');
+          navigate(toMigrate());
         }
       } catch {
         // Dialog cancelled
       }
     } else {
-      navigate('/migrate');
+      navigate(toMigrate());
     }
   }, [isSignedIn, navigate]);
 
@@ -158,7 +250,7 @@ export function SharedAppLayout() {
       <div className="flex h-screen bg-primary">
         {!isMigrateRoute && (
           <AppBar
-            projects={orgProjects}
+            projects={orderedProjects}
             organizations={organizations}
             selectedOrgId={selectedOrgId ?? ''}
             onOrgSelect={setSelectedOrgId}
@@ -166,6 +258,8 @@ export function SharedAppLayout() {
             onCreateProject={handleCreateProject}
             onWorkspacesClick={handleWorkspacesClick}
             onProjectClick={handleProjectClick}
+            onProjectsDragEnd={handleProjectsDragEnd}
+            isSavingProjectOrder={isSavingProjectOrder}
             isWorkspacesActive={isWorkspacesActive}
             activeProjectId={activeProjectId}
             isSignedIn={isSignedIn}
