@@ -77,6 +77,20 @@ zip -q vibe-kanban-review.zip vibe-kanban-review
 rm -f vibe-kanban-review
 mv vibe-kanban-review.zip npx-cli/dist/$PLATFORM/vibe-kanban-review.zip
 
+# Verify all binaries were created
+MISSING=0
+for binary in vibe-kanban vibe-kanban-mcp vibe-kanban-review; do
+  if [ ! -f "npx-cli/dist/$PLATFORM/${binary}.zip" ]; then
+    echo "ERROR: ${binary}.zip missing — build incomplete"
+    MISSING=1
+  fi
+done
+if [ "$MISSING" -eq 1 ]; then
+  echo "Build failed: not all binaries were created. Removing partial dist to prevent LOCAL_DEV_MODE from using stale files."
+  rm -rf npx-cli/dist
+  exit 1
+fi
+
 echo "✅ Build complete!"
 echo "📁 Files created:"
 echo "   - npx-cli/dist/$PLATFORM/vibe-kanban.zip"
