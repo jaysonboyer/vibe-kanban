@@ -26,6 +26,9 @@
           "index",
           "getting-started",
           "browser-testing",
+          "issue-management",
+          "reviewing-code",
+          "remote-access",
           {
             "group": "Supported Coding Agents",
             "expanded": true,
@@ -118,7 +121,8 @@
       {
         "group": "Help",
         "pages": [
-          "troubleshooting"
+          "troubleshooting",
+          "responsible-disclosure"
         ]
       }
     ]
@@ -162,6 +166,10 @@
     {
       "source": "/workspaces/preview",
       "destination": "/browser-testing"
+    },
+    {
+      "source": "/remote-control",
+      "destination": "/remote-access"
     }
   ],
   "footer": {
