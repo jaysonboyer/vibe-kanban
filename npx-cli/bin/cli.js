@@ -103,14 +103,27 @@ async function extractAndRun(baseName, launch) {
   const binPath = path.join(versionCacheDir, binName);
   const zipPath = path.join(versionCacheDir, `${baseName}.zip`);
 
-  // Clean old binary if exists
-  try {
-    if (fs.existsSync(binPath)) {
-      fs.unlinkSync(binPath);
+  // In local dev mode, skip download/extract entirely if binary already exists.
+  // local-build.sh extracts the binary alongside the zip, so subsequent runs
+  // can reuse it directly without re-extracting every time.
+  if (LOCAL_DEV_MODE && fs.existsSync(binPath)) {
+    if (platform !== "win32") {
+      try { fs.chmodSync(binPath, 0o755); } catch {}
     }
-  } catch (err) {
-    if (process.env.VIBE_KANBAN_DEBUG) {
-      console.warn(`Warning: Could not delete existing binary: ${err.message}`);
+    return launch(binPath);
+  }
+
+  // In remote-download mode, evict the cached binary so the freshly-downloaded
+  // zip always wins (guards against partial extractions from prior runs).
+  if (!LOCAL_DEV_MODE) {
+    try {
+      if (fs.existsSync(binPath)) {
+        fs.unlinkSync(binPath);
+      }
+    } catch (err) {
+      if (process.env.VIBE_KANBAN_DEBUG) {
+        console.warn(`Warning: Could not delete existing binary: ${err.message}`);
+      }
     }
   }
 
@@ -163,6 +176,13 @@ async function extractAndRun(baseName, launch) {
 
 async function main() {
   fs.mkdirSync(versionCacheDir, { recursive: true });
+
+  // Default to port 3000 in local dev mode when no port is explicitly configured.
+  // The server reads BACKEND_PORT first, then PORT; if neither is set it binds to
+  // port 0 (OS-assigned random port), which changes on every restart.
+  if (LOCAL_DEV_MODE && !process.env.PORT && !process.env.BACKEND_PORT) {
+    process.env.PORT = "3000";
+  }
 
   const args = process.argv.slice(2);
   const isMcpMode = args.includes("--mcp");

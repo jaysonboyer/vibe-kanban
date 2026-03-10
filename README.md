@@ -143,27 +143,31 @@ cd npx-cli && node bin/cli.js
 
 #### Install Globally
 
-Install the built package globally to use `vibe-kanban` from anywhere:
+Create a symlink pointing to the workspace `cli.js`. This approach is stable across Node version switches and picks up new builds automatically:
 
 ```bash
-npm install -g .
+# Remove any existing install at the target first
+npm uninstall -g vibe-kanban 2>/dev/null || true
+rm -f /opt/homebrew/bin/vibe-kanban
+
+# Create symlink (update path to match your workspace location)
+ln -s /path/to/vibe-kanban/npx-cli/bin/cli.js /opt/homebrew/bin/vibe-kanban
 ```
 
 Verify the installation:
 ```bash
 which vibe-kanban
-vibe-kanban --version
+ls -la $(which vibe-kanban)
 ```
 
-You can now run `vibe-kanban` from any directory.
+You can now run `vibe-kanban` from any directory. LOCAL_DEV_MODE activates automatically when `npx-cli/dist/` exists.
 
 #### Updating Your Installation
 
-After making changes to the code, rebuild and reinstall:
+After making changes to the code, just rebuild — the symlink picks up the new binaries automatically:
 
 ```bash
 pnpm run build:npx
-npm install -g .
 ```
 
 ### Environment Variables

@@ -9,9 +9,16 @@ const BINARY_TAG = "__BINARY_TAG__"; // e.g., v0.0.135-20251215122030
 const CACHE_DIR = path.join(require("os").homedir(), ".vibe-kanban", "bin");
 
 // Local development mode: use binaries from npx-cli/dist/ instead of R2
-// Only activate if dist/ exists (i.e., running from source after local-build.sh)
+// Activate if:
+//   - dist/ exists (i.e., running from source after local-build.sh), OR
+//   - VIBE_KANBAN_LOCAL=1 is set, OR
+//   - R2_BASE_URL is still an unfilled template placeholder (running directly
+//     from source checkout without npm pack — never attempt a download)
 const LOCAL_DIST_DIR = path.join(__dirname, "..", "dist");
-const LOCAL_DEV_MODE = fs.existsSync(LOCAL_DIST_DIR) || process.env.VIBE_KANBAN_LOCAL === "1";
+const LOCAL_DEV_MODE =
+  fs.existsSync(LOCAL_DIST_DIR) ||
+  process.env.VIBE_KANBAN_LOCAL === "1" ||
+  R2_BASE_URL.startsWith("__");
 
 async function fetchJson(url) {
   return new Promise((resolve, reject) => {
