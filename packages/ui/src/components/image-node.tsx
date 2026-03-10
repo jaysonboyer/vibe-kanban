@@ -5,10 +5,11 @@ import { NodeKey, SerializedLexicalNode, Spread, $getNodeByKey } from 'lexical';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Download, File, HelpCircle, Loader2, X } from 'lucide-react';
 import {
-  useTaskAttemptId,
+  useWorkspaceId,
+  useSessionId,
   useLocalImages,
   type LocalImageMetadata,
-} from './TaskAttemptContext';
+} from './WorkspaceContext';
 import {
   createDecoratorNode,
   type DecoratorNodeConfig,
@@ -115,7 +116,8 @@ function toMetadataFromLocalImage(
 }
 
 function useImageMetadata(
-  taskAttemptId: string | undefined,
+  workspaceId: string | undefined,
+  sessionId: string | undefined,
   src: string,
   localImages: LocalImageMetadata[]
 ) {
@@ -131,20 +133,20 @@ function useImageMetadata(
     [localImage]
   );
 
-  const shouldFetch = isVibeImage && !!taskAttemptId && !localImage;
+  const shouldFetch = isVibeImage && !!workspaceId && !localImage;
 
   const query = useQuery({
-    queryKey: ['image-metadata', taskAttemptId, src],
+    queryKey: ['image-metadata', workspaceId, sessionId, src],
     queryFn: async (): Promise<ImageMetadataLike | null> => {
-      if (!taskAttemptId) return null;
+      if (!workspaceId || !sessionId) return null;
 
       const response = await fetch(
-        `/api/task-attempts/${taskAttemptId}/images/metadata?path=${encodeURIComponent(src)}`
+        `/api/workspaces/${workspaceId}/images/metadata?path=${encodeURIComponent(src)}&session_id=${sessionId}`
       );
       const payload = await response.json();
       return payload.data as ImageMetadataLike | null;
     },
-    enabled: shouldFetch,
+    enabled: shouldFetch && !!sessionId,
     staleTime: Infinity,
   });
 
@@ -184,7 +186,8 @@ export function createImageNode(options: CreateImageNodeOptions) {
   }): JSX.Element {
     const { t } = useTranslation('common');
     const { src, altText } = data;
-    const taskAttemptId = useTaskAttemptId();
+    const workspaceId = useWorkspaceId();
+    const sessionId = useSessionId();
     const localImages = useLocalImages();
     const [editor] = useLexicalComposerContext();
 
@@ -204,7 +207,8 @@ export function createImageNode(options: CreateImageNodeOptions) {
     );
 
     const { data: metadata, isLoading: loading } = useImageMetadata(
-      taskAttemptId,
+      workspaceId,
+      sessionId,
       src,
       localImages
     );
@@ -275,7 +279,7 @@ export function createImageNode(options: CreateImageNodeOptions) {
     let displayName: string;
     let metadataLine: string | null = null;
 
-    const hasContext = !!taskAttemptId;
+    const hasContext = !!workspaceId;
     const hasLocalImage = localImages.some((img) => img.path === src);
 
     if (isAttachment) {

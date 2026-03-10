@@ -135,6 +135,12 @@ pub struct UiPreferencesData {
     /// Workspace sidebar sort preferences
     #[serde(default)]
     pub workspace_sort: WorkspaceSortStateData,
+    /// Last selected organization ID
+    #[serde(default)]
+    pub selected_org_id: Option<String>,
+    /// Last selected project ID
+    #[serde(default)]
+    pub selected_project_id: Option<String>,
 }
 
 /// Linked issue data for draft workspace scratch
@@ -178,6 +184,12 @@ pub struct DraftWorkspaceRepo {
     pub target_branch: String,
 }
 
+/// Data for project repo defaults scratch (default repos/branches per project)
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ProjectRepoDefaultsData {
+    pub repos: Vec<DraftWorkspaceRepo>,
+}
+
 /// Data for a draft issue scratch (issue creation on kanban board)
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct DraftIssueData {
@@ -219,6 +231,7 @@ pub enum ScratchPayload {
     PreviewSettings(PreviewSettingsData),
     WorkspaceNotes(WorkspaceNotesData),
     UiPreferences(UiPreferencesData),
+    ProjectRepoDefaults(ProjectRepoDefaultsData),
 }
 
 impl ScratchPayload {

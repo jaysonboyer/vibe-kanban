@@ -8,6 +8,8 @@ members = [
     "crates/db",
     "crates/executors",
     "crates/services",
+    "crates/worktree-manager",
+    "crates/workspace-manager",
     "crates/relay-control",
     "crates/server-info",
     "crates/utils",
@@ -27,7 +29,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 anyhow = "1.0"
 git2 = { version = "0.20.3", default-features = false }
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots-no-provider"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "stream", "rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 thiserror = "2.0.12"
 tracing = "0.1.43"
@@ -42,7 +44,3 @@ debug = 1
 split-debuginfo = "packed"
 strip = true
 
-# Patches for codex-core's forked tokio-tungstenite with proxy support
-[patch.crates-io]
-tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
-tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }

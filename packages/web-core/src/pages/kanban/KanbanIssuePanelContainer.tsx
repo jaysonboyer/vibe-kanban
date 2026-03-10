@@ -1,10 +1,10 @@
 import {
   useState,
-  useMemo,
   useCallback,
   useEffect,
   useReducer,
   useRef,
+  useMemo,
 } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,6 @@ import type { IssuePriority } from 'shared/remote-types';
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback';
 import { useProjectContext } from '@/shared/hooks/useProjectContext';
 import { useOrgContext } from '@/shared/hooks/useOrgContext';
-import { useKanbanNavigation } from '@/shared/hooks/useKanbanNavigation';
 import { useProjectWorkspaceCreateDraft } from '@/shared/hooks/useProjectWorkspaceCreateDraft';
 import WYSIWYGEditor from '@/shared/components/WYSIWYGEditor';
 import { SearchableTagDropdownContainer } from '@/shared/components/SearchableTagDropdownContainer';
@@ -35,8 +34,6 @@ import {
   buildWorkspaceCreateInitialState,
   buildWorkspaceCreatePrompt,
 } from '@/shared/lib/workspaceCreateState';
-import { ScratchType, type DraftIssueData } from 'shared/types';
-import { useScratch } from '@/shared/hooks/useScratch';
 import {
   createBlankCreateFormData,
   createInitialKanbanIssuePanelFormState,
@@ -50,8 +47,17 @@ import {
   deleteAttachment,
 } from '@/shared/lib/remoteApi';
 import { extractAttachmentIds } from '@/shared/lib/attachmentUtils';
-
-const DRAFT_ISSUE_ID = '00000000-0000-0000-0000-000000000002';
+import { ConfirmDialog } from '@vibe/ui/components/ConfirmDialog';
+import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
+import { useCurrentKanbanRouteState } from '@/shared/hooks/useCurrentKanbanRouteState';
+import {
+  buildKanbanIssueComposerKey,
+  closeKanbanIssueComposer,
+  patchKanbanIssueComposer,
+  resetKanbanIssueComposer,
+  useKanbanIssueComposer,
+  useKanbanIssueComposerStore,
+} from '@/shared/stores/useKanbanIssueComposerStore';
 
 interface KanbanIssuePanelContainerProps {
   issueResolution: 'resolving' | 'ready' | 'missing' | null;
@@ -68,18 +74,8 @@ export function KanbanIssuePanelContainer({
   onExpectIssueOpen,
 }: KanbanIssuePanelContainerProps) {
   const { t } = useTranslation('common');
-  // Navigation hook - URL is single source of truth
-  const {
-    issueId: selectedKanbanIssueId,
-    isCreateMode: kanbanCreateMode,
-    createDefaultStatusId: kanbanCreateDefaultStatusId,
-    createDefaultPriority: kanbanCreateDefaultPriority,
-    createDefaultAssigneeIds: kanbanCreateDefaultAssigneeIds,
-    createDefaultParentIssueId: kanbanCreateDefaultParentIssueId,
-    openIssue,
-    closePanel,
-    updateCreateDefaults,
-  } = useKanbanNavigation();
+  const appNavigation = useAppNavigation();
+  const routeState = useCurrentKanbanRouteState();
 
   const { openWorkspaceCreateFromState } = useProjectWorkspaceCreateDraft();
   const { workspaces } = useUserContext();
@@ -113,15 +109,67 @@ export function KanbanIssuePanelContainer({
     getPullRequestsForIssue,
     isLoading: projectLoading,
   } = useProjectContext();
+  const selectedKanbanIssueId = routeState.issueId;
+  const issueComposerKey = useMemo(
+    () => buildKanbanIssueComposerKey(routeState.hostId, projectId),
+    [routeState.hostId, projectId]
+  );
+  const issueComposer = useKanbanIssueComposer(issueComposerKey);
+  const kanbanCreateMode = issueComposer !== null;
+  const createComposerInitial = issueComposer?.initial ?? null;
+  const kanbanCreateDefaultStatusId = createComposerInitial?.statusId ?? null;
+  const kanbanCreateDefaultPriority = createComposerInitial?.priority ?? null;
+  const kanbanCreateDefaultAssigneeIds =
+    createComposerInitial?.assigneeIds ?? null;
+  const kanbanCreateDefaultParentIssueId =
+    createComposerInitial?.parentIssueId ?? null;
+  const openIssue = useCallback(
+    (issueId: string) => {
+      if (kanbanCreateMode && issueComposerKey) {
+        closeKanbanIssueComposer(issueComposerKey);
+      }
+      appNavigation.goToProjectIssue(projectId, issueId);
+    },
+    [kanbanCreateMode, issueComposerKey, appNavigation, projectId]
+  );
+  const closeKanbanIssuePanel = useCallback(() => {
+    if (kanbanCreateMode && issueComposerKey) {
+      closeKanbanIssueComposer(issueComposerKey);
+    }
+    appNavigation.goToProject(projectId);
+  }, [kanbanCreateMode, issueComposerKey, appNavigation, projectId]);
+  const updateIssueComposerDraft = useCallback(
+    (patch: {
+      statusId?: string;
+      priority?: IssuePriority | null;
+      assigneeIds?: string[];
+      parentIssueId?: string;
+      title?: string;
+      description?: string | null;
+      tagIds?: string[];
+      createDraftWorkspace?: boolean;
+    }) => {
+      if (!kanbanCreateMode || !issueComposerKey) {
+        return;
+      }
+
+      patchKanbanIssueComposer(issueComposerKey, patch);
+    },
+    [kanbanCreateMode, issueComposerKey]
+  );
+  const resetIssueComposerDraft = useCallback(() => {
+    if (!issueComposerKey) {
+      return;
+    }
+
+    resetKanbanIssueComposer(issueComposerKey);
+  }, [issueComposerKey]);
 
   const { isLoading: orgLoading, membersWithProfilesById } = useOrgContext();
 
   // Get action methods from actions context
   const { openStatusSelection, openPrioritySelection, openAssigneeSelection } =
     useActions();
-
-  // Close panel by navigating to project URL (URL is single source of truth)
-  const closeKanbanIssuePanel = closePanel;
 
   // Find selected issue if in edit mode
   const selectedIssue = useMemo(() => {
@@ -184,8 +232,8 @@ export function KanbanIssuePanelContainer({
     }));
   }, [getPullRequestsForIssue, selectedKanbanIssueId]);
 
-  // Determine mode (only edit when an issue is selected)
-  const mode = kanbanCreateMode || !selectedKanbanIssueId ? 'create' : 'edit';
+  // Determine mode from composer state (create) or issue route (edit).
+  const mode = kanbanCreateMode ? 'create' : 'edit';
 
   // Sort statuses by sort_order
   const sortedStatuses = useMemo(
@@ -197,7 +245,7 @@ export function KanbanIssuePanelContainer({
   const defaultStatusId =
     kanbanCreateDefaultStatusId ?? sortedStatuses[0]?.id ?? '';
 
-  // Default create form values for the current URL defaults + project context
+  // Default create form values for the current create-default state + project context
   const createModeDefaults = useMemo<IssueFormData>(
     () => ({
       title: '',
@@ -225,7 +273,6 @@ export function KanbanIssuePanelContainer({
     createInitialKanbanIssuePanelFormState
   );
   const createFormData = formState.createFormData;
-  const isDraftAutosavePaused = formState.isDraftAutosavePaused;
 
   useEffect(() => {
     if (mode !== 'create') return;
@@ -316,56 +363,10 @@ export function KanbanIssuePanelContainer({
     }
   }, 500);
 
-  // Draft issue scratch persistence
-  const {
-    scratch: draftIssueScratch,
-    updateScratch: updateDraftIssueScratch,
-    deleteScratch: deleteDraftIssueScratch,
-    isLoading: draftIssueLoading,
-  } = useScratch(ScratchType.DRAFT_ISSUE, DRAFT_ISSUE_ID);
-
-  const hasDraftIssueScratch = useMemo(() => {
-    const scratchData =
-      draftIssueScratch?.payload?.type === 'DRAFT_ISSUE'
-        ? draftIssueScratch.payload.data
-        : undefined;
-    return Boolean(scratchData && scratchData.project_id === projectId);
-  }, [draftIssueScratch, projectId]);
-
-  const {
-    debounced: debouncedSaveDraftIssue,
-    cancel: cancelDebouncedDraftIssue,
-  } = useDebouncedCallback(async (data: DraftIssueData) => {
-    try {
-      await updateDraftIssueScratch({
-        payload: { type: 'DRAFT_ISSUE', data },
-      });
-    } catch (e) {
-      console.error('Failed to save draft issue:', e);
-    }
-  }, 500);
-
   // Reset save status only when switching to a different issue or mode
   useEffect(() => {
     setDescriptionSaveStatus('idle');
   }, [selectedKanbanIssueId, kanbanCreateMode]);
-
-  // Helper to build form data from a draft issue scratch
-  const restoreFromScratch = useCallback(
-    (scratchData: DraftIssueData): IssueFormData => {
-      const statusExists = statuses.some((s) => s.id === scratchData.status_id);
-      return {
-        title: scratchData.title,
-        description: scratchData.description ?? null,
-        statusId: statusExists ? scratchData.status_id : defaultStatusId,
-        priority: (scratchData.priority as IssueFormData['priority']) ?? null,
-        assigneeIds: scratchData.assignee_ids,
-        tagIds: scratchData.tag_ids,
-        createDraftWorkspace: scratchData.create_draft_workspace,
-      };
-    },
-    [statuses, defaultStatusId]
-  );
 
   const createFormFallback = useMemo(
     () => createBlankCreateFormData(defaultStatusId),
@@ -449,8 +450,9 @@ export function KanbanIssuePanelContainer({
   useEffect(() => {
     const currentIssueId = selectedKanbanIssueId;
     const isNewIssue = currentIssueId !== prevIssueIdRef.current;
+    const shouldSeedCreateForm = mode === 'create' && createFormData === null;
 
-    if (!isNewIssue) {
+    if (!isNewIssue && !shouldSeedCreateForm) {
       // Same issue - no reset needed
       // (dropdown fields derive from server state, text fields preserve local edits)
       return;
@@ -462,30 +464,38 @@ export function KanbanIssuePanelContainer({
     // Cancel any pending debounced saves when switching issues
     cancelDebouncedTitle();
     cancelDebouncedDescription();
-    cancelDebouncedDraftIssue();
 
     let nextCreateFormData: IssueFormData | null = null;
-    let hasRestoredFromScratch = false;
+    let restoredFromScratch = false;
 
-    // Initialize create form data if in create mode
     if (mode === 'create') {
-      // Gate on scratch loading — don't initialize until we know the scratch state
-      if (draftIssueLoading) {
-        nextCreateFormData = null;
-      } else {
-        // Priority 1: Restore from scratch if available for this project
-        const scratchData =
-          draftIssueScratch?.payload?.type === 'DRAFT_ISSUE'
-            ? draftIssueScratch.payload.data
-            : undefined;
+      // Check if the composer store has a saved draft (e.g., restored from
+      // localStorage on remote-web). Use it to seed the form instead of defaults.
+      const composerDraft =
+        useKanbanIssueComposerStore.getState().byKey[issueComposerKey]?.draft;
+      const hasSavedDraft =
+        composerDraft != null &&
+        (composerDraft.title !== '' || composerDraft.description != null);
 
-        if (scratchData && scratchData.project_id === projectId) {
-          hasRestoredFromScratch = true;
-          nextCreateFormData = restoreFromScratch(scratchData);
-        } else {
-          // Priority 2: Seed from URL defaults (read once), then empty form
-          nextCreateFormData = createModeDefaults;
-        }
+      if (hasSavedDraft) {
+        nextCreateFormData = {
+          title: composerDraft.title,
+          description: composerDraft.description ?? null,
+          statusId: composerDraft.statusId ?? createModeDefaults.statusId,
+          priority:
+            composerDraft.priority === undefined
+              ? createModeDefaults.priority
+              : composerDraft.priority,
+          assigneeIds:
+            composerDraft.assigneeIds ?? createModeDefaults.assigneeIds,
+          tagIds: composerDraft.tagIds ?? createModeDefaults.tagIds,
+          createDraftWorkspace:
+            composerDraft.createDraftWorkspace ??
+            createModeDefaults.createDraftWorkspace,
+        };
+        restoredFromScratch = true;
+      } else {
+        nextCreateFormData = createModeDefaults;
       }
     }
 
@@ -493,110 +503,16 @@ export function KanbanIssuePanelContainer({
       type: 'resetForIssueChange',
       mode,
       createFormData: nextCreateFormData,
-      hasRestoredFromScratch,
+      hasRestoredFromScratch: restoredFromScratch,
     });
   }, [
     mode,
+    createFormData,
     selectedKanbanIssueId,
     cancelDebouncedTitle,
     cancelDebouncedDescription,
-    cancelDebouncedDraftIssue,
-    draftIssueScratch,
-    draftIssueLoading,
-    projectId,
-    restoreFromScratch,
     createModeDefaults,
-  ]);
-
-  // Handle late scratch loading: if scratch arrives after initial create mode render
-  useEffect(() => {
-    if (mode !== 'create') {
-      if (formState.hasRestoredFromScratch) {
-        dispatchFormState({
-          type: 'setHasRestoredFromScratch',
-          hasRestoredFromScratch: false,
-        });
-      }
-      return;
-    }
-    if (formState.hasRestoredFromScratch) return;
-    if (draftIssueLoading) return;
-
-    const scratchData =
-      draftIssueScratch?.payload?.type === 'DRAFT_ISSUE'
-        ? draftIssueScratch.payload.data
-        : undefined;
-
-    if (scratchData && scratchData.project_id === projectId) {
-      dispatchFormState({
-        type: 'setCreateFormData',
-        createFormData: restoreFromScratch(scratchData),
-      });
-      dispatchFormState({
-        type: 'setHasRestoredFromScratch',
-        hasRestoredFromScratch: true,
-      });
-    } else if (createFormData === null) {
-      // Scratch loaded but no data — seed from URL defaults
-      dispatchFormState({
-        type: 'setCreateFormData',
-        createFormData: createModeDefaults,
-      });
-    }
-  }, [
-    mode,
-    formState.hasRestoredFromScratch,
-    draftIssueScratch,
-    draftIssueLoading,
-    projectId,
-    restoreFromScratch,
-    createFormData,
-    createModeDefaults,
-  ]);
-
-  // Auto-save draft issue to scratch when form data changes in create mode
-  useEffect(() => {
-    if (
-      mode !== 'create' ||
-      !createFormData ||
-      !projectId ||
-      isDraftAutosavePaused
-    ) {
-      return;
-    }
-
-    if (!isCreateDraftDirty) {
-      cancelDebouncedDraftIssue();
-      if (hasDraftIssueScratch) {
-        deleteDraftIssueScratch().catch((error) => {
-          console.error('Failed to delete draft issue:', error);
-        });
-      }
-      return;
-    }
-
-    debouncedSaveDraftIssue({
-      title: createFormData.title,
-      description: createFormData.description ?? undefined,
-      status_id: createFormData.statusId,
-      priority: createFormData.priority ?? undefined,
-      assignee_ids: createFormData.assigneeIds,
-      tag_ids: createFormData.tagIds,
-      create_draft_workspace: createFormData.createDraftWorkspace,
-      project_id: projectId,
-      parent_issue_id: kanbanCreateDefaultParentIssueId ?? undefined,
-    } as DraftIssueData);
-  }, [
-    mode,
-    createFormData,
-    projectId,
-    kanbanCreateDefaultParentIssueId,
-    debouncedSaveDraftIssue,
-    isDraftAutosavePaused,
-    isCreateDraftDirty,
-    hasDraftIssueScratch,
-    cancelDebouncedDraftIssue,
-    deleteDraftIssueScratch,
+    issueComposerKey,
   ]);
 
   // Form change handler - persists changes immediately in edit mode
@@ -605,15 +521,8 @@ export function KanbanIssuePanelContainer({
       field: K,
       value: IssueFormData[K]
     ) => {
-      // Create mode: update createFormData for all fields
-      if (kanbanCreateMode || !selectedKanbanIssueId) {
-        if (isDraftAutosavePaused) {
-          dispatchFormState({
-            type: 'setDraftAutosavePaused',
-            isPaused: false,
-          });
-        }
-
+      // Create mode: update in-panel form state and composer draft.
+      if (kanbanCreateMode) {
         // For statusId, open the status selection dialog with callback
         if (field === 'statusId') {
           const { ProjectSelectionDialog } = await import(
@@ -625,7 +534,7 @@ export function KanbanIssuePanelContainer({
           });
           if (result && typeof result === 'object' && 'statusId' in result) {
             const statusId = result.statusId as string;
-            updateCreateDefaults({ statusId });
+            updateIssueComposerDraft({ statusId });
             dispatchFormState({
               type: 'patchCreateFormData',
               patch: { statusId },
@@ -647,9 +556,7 @@ export function KanbanIssuePanelContainer({
           if (result && typeof result === 'object' && 'priority' in result) {
             const priority = (result as { priority: IssuePriority | null })
               .priority;
-            updateCreateDefaults({
-              priority,
-            });
+            updateIssueComposerDraft({ priority });
             dispatchFormState({
               type: 'patchCreateFormData',
               patch: { priority },
@@ -670,6 +577,7 @@ export function KanbanIssuePanelContainer({
             isCreateMode: true,
             createModeAssigneeIds: createFormData?.assigneeIds ?? [],
             onCreateModeAssigneesChange: (assigneeIds: string[]) => {
+              updateIssueComposerDraft({ assigneeIds });
               dispatchFormState({
                 type: 'setCreateAssigneeIds',
                 assigneeIds,
@@ -685,6 +593,11 @@ export function KanbanIssuePanelContainer({
           patch: { [field]: value } as Partial<IssueFormData>,
           fallback: createFormFallback,
         });
+        updateIssueComposerDraft({ [field]: value } as Partial<IssueFormData>);
+        return;
+      }
+
+      if (!selectedKanbanIssueId) {
         return;
       }
 
@@ -752,11 +665,10 @@ export function KanbanIssuePanelContainer({
       openStatusSelection,
       openPrioritySelection,
       openAssigneeSelection,
-      updateCreateDefaults,
+      updateIssueComposerDraft,
       issueTags,
       insertIssueTag,
       removeIssueTag,
-      isDraftAutosavePaused,
     ]
   );
 
@@ -836,7 +748,10 @@ export function KanbanIssuePanelContainer({
           });
         }
 
-        // Navigate to workspace creation if requested
+        if (issueComposerKey) {
+          closeKanbanIssueComposer(issueComposerKey);
+        }
+
         if (displayData.createDraftWorkspace) {
           const initialPrompt = buildWorkspaceCreatePrompt(
             displayData.title,
@@ -846,12 +761,9 @@ export function KanbanIssuePanelContainer({
           // Get defaults from most recent workspace
           const defaults = await getWorkspaceDefaults(
             workspaces,
-            localWorkspaceIds
+            localWorkspaceIds,
+            projectId
           );
-
-          // Clean up draft scratch after successful creation
-          cancelDebouncedDraftIssue();
-          deleteDraftIssueScratch().catch(console.error);
 
           const createState = buildWorkspaceCreateInitialState({
             prompt: initialPrompt,
@@ -862,15 +774,20 @@ export function KanbanIssuePanelContainer({
             issueId: syncedIssue.id,
           });
           if (!draftId) {
+            await ConfirmDialog.show({
+              title: t('common:error'),
+              message: t(
+                'workspaces.createDraftError',
+                'Failed to prepare workspace draft. Please try again.'
+              ),
+              confirmText: t('common:ok'),
+              showCancelButton: false,
+            });
             onExpectIssueOpen?.(syncedIssue.id);
             openIssue(syncedIssue.id);
           }
           return; // Don't open issue panel since we're navigating away
         }
-
-        // Clean up draft scratch after successful creation
-        cancelDebouncedDraftIssue();
-        deleteDraftIssueScratch().catch(console.error);
 
         // Open the newly created issue
         onExpectIssueOpen?.(syncedIssue.id);
@@ -899,11 +816,11 @@ export function KanbanIssuePanelContainer({
     workspaces,
     localWorkspaceIds,
     closeKanbanIssuePanel,
-    cancelDebouncedDraftIssue,
-    deleteDraftIssueScratch,
+    issueComposerKey,
     getAttachmentIds,
     clearAttachments,
     onExpectIssueOpen,
+    t,
   ]);
 
   const handleCmdEnterSubmit = useCallback(() => {
@@ -912,19 +829,12 @@ export function KanbanIssuePanelContainer({
   }, [mode, handleSubmit]);
 
   const handleDeleteDraft = useCallback(() => {
-    cancelDebouncedDraftIssue();
-    dispatchFormState({
-      type: 'setDraftAutosavePaused',
-      isPaused: true,
-    });
     dispatchFormState({
       type: 'setCreateFormData',
       createFormData: createModeDefaults,
     });
-    deleteDraftIssueScratch().catch((error) => {
-      console.error('Failed to delete draft issue:', error);
-    });
-  }, [cancelDebouncedDraftIssue, deleteDraftIssueScratch, createModeDefaults]);
+    resetIssueComposerDraft();
+  }, [createModeDefaults, resetIssueComposerDraft]);
 
   // Tag create callback - returns the new tag ID so it can be auto-selected
   const handleCreateTag = useCallback(

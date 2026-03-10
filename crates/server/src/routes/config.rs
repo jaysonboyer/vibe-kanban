@@ -86,6 +86,7 @@ impl Environment {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 pub struct UserSystemInfo {
+    pub version: String,
     pub config: Config,
     pub analytics_user_id: String,
     pub login_status: LoginStatus,
@@ -112,6 +113,7 @@ async fn get_user_system_info(
     .unwrap_or(LoginStatus::LoggedOut);
 
     let user_system_info = UserSystemInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
         config: config.clone(),
         analytics_user_id: deployment.user_id().to_string(),
         login_status,
@@ -553,6 +555,8 @@ async fn get_agent_preset_options(
 pub struct ExecutorDiscoveredOptionsStreamQuery {
     executor: BaseCodingAgent,
     #[serde(default)]
+    session_id: Option<Uuid>,
+    #[serde(default)]
     workspace_id: Option<Uuid>,
     #[serde(default)]
     repo_id: Option<Uuid>,
@@ -581,6 +585,7 @@ async fn handle_executor_discovered_options_ws(
         .container()
         .discover_executor_options(
             ExecutorProfileId::new(query.executor),
+            query.session_id,
             query.workspace_id,
             query.repo_id,
         )

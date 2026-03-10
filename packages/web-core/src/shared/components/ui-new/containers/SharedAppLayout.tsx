@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DropResult } from '@hello-pangea/dnd';
-import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
+import { Outlet } from '@tanstack/react-router';
 import { siDiscord, siGithub } from 'simple-icons';
 import { XIcon, PlusIcon, LayoutIcon, KanbanIcon } from '@phosphor-icons/react';
 import { SyncErrorProvider } from '@/shared/providers/SyncErrorProvider';
@@ -17,10 +17,13 @@ import { useOrganizationStore } from '@/shared/stores/useOrganizationStore';
 import { useAuth } from '@/shared/hooks/auth/useAuth';
 import { useDiscordOnlineCount } from '@/shared/hooks/useDiscordOnlineCount';
 import { useGitHubStars } from '@/shared/hooks/useGitHubStars';
+import { useUserSystem } from '@/shared/hooks/useUserSystem';
+import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
+import { useCurrentAppDestination } from '@/shared/hooks/useCurrentAppDestination';
 import {
-  buildProjectRootPath,
-  parseProjectSidebarRoute,
-} from '@/shared/lib/routes/projectSidebarRoutes';
+  getProjectDestination,
+  isWorkspacesDestination,
+} from '@/shared/lib/routes/appNavigation';
 import {
   CreateOrganizationDialog,
   type CreateOrganizationResult,
@@ -32,30 +35,32 @@ import {
 import { OAuthDialog } from '@/shared/dialogs/global/OAuthDialog';
 import { CommandBarDialog } from '@/shared/dialogs/command-bar/CommandBarDialog';
 import { useCommandBarShortcut } from '@/shared/hooks/useCommandBarShortcut';
+import { useWorkspaceSidebarPreviewController } from '@/shared/hooks/useWorkspaceSidebarPreviewController';
 import { useShape } from '@/shared/integrations/electric/hooks';
 import { sortProjectsByOrder } from '@/shared/lib/projectOrder';
-import { resolveAppPath } from '@/shared/lib/routes/pathResolution';
 import {
   PROJECT_MUTATION,
   PROJECTS_SHAPE,
   type Project as RemoteProject,
 } from 'shared/remote-types';
-import {
-  toMigrate,
-  toProject,
-  toWorkspaces,
-} from '@/shared/lib/routes/navigation';
+import { WorkspacesSidebarContainer } from '@/pages/workspaces/WorkspacesSidebarContainer';
+import { WorkspacesSidebarReopenTag } from '@vibe/ui/components/WorkspacesSidebar';
 
 export function SharedAppLayout() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const isMigrateRoute = location.pathname.startsWith('/migrate');
+  const appNavigation = useAppNavigation();
+  const currentDestination = useCurrentAppDestination();
+  const isMigrateRoute = currentDestination?.kind === 'migrate';
   const isMobile = useIsMobile();
   const mobileFontScale = useUiPreferencesStore((s) => s.mobileFontScale);
+  const isLeftSidebarVisible = useUiPreferencesStore(
+    (s) => s.isLeftSidebarVisible
+  );
   const { isSignedIn } = useAuth();
+  const { appVersion } = useUserSystem();
   const { data: onlineCount } = useDiscordOnlineCount();
   const { data: starCount } = useGitHubStars();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isAppBarHovered, setIsAppBarHovered] = useState(false);
 
   // Register CMD+K shortcut globally for all routes under SharedAppLayout
   useCommandBarShortcut(() => CommandBarDialog.show());
@@ -86,7 +91,6 @@ export function SharedAppLayout() {
   const selectedOrgId = useOrganizationStore((s) => s.selectedOrgId);
   const setSelectedOrgId = useOrganizationStore((s) => s.setSelectedOrgId);
   const prevOrgIdRef = useRef<string | null>(null);
-  const projectLastPathRef = useRef<Record<string, string>>({});
 
   // Auto-select first org if none selected or selection is invalid
   useEffect(() => {
@@ -144,52 +148,49 @@ export function SharedAppLayout() {
       !isLoading
     ) {
       if (sortedProjects.length > 0) {
-        navigate(toProject(sortedProjects[0].id));
+        appNavigation.goToProject(sortedProjects[0].id);
       } else {
-        navigate(toWorkspaces());
+        appNavigation.goToWorkspaces();
       }
       prevOrgIdRef.current = selectedOrgId;
     } else if (prevOrgIdRef.current === null && selectedOrgId) {
       prevOrgIdRef.current = selectedOrgId;
     }
-  }, [selectedOrgId, sortedProjects, isLoading, navigate, isMigrateRoute]);
+  }, [selectedOrgId, sortedProjects, isLoading, isMigrateRoute, appNavigation]);
 
   // Navigation state for AppBar active indicators
-  const isWorkspacesActive = location.pathname.startsWith('/workspaces');
-  const activeProjectId = location.pathname.startsWith('/projects/')
-    ? location.pathname.split('/')[2]
-    : null;
+  const projectDestination = useMemo(
+    () => getProjectDestination(currentDestination),
+    [currentDestination]
+  );
+  const isWorkspacesActive = isWorkspacesDestination(currentDestination);
+  const isWorkspaceSidebarPreviewEnabled =
+    !isMobile && isWorkspacesActive && !isLeftSidebarVisible;
+  const activeProjectId = projectDestination?.projectId ?? null;
+  const sidebarPreview = useWorkspaceSidebarPreviewController({
+    enabled: isWorkspaceSidebarPreviewEnabled,
+    isAppBarHovered,
+  });
 
-  // Remember the last visited route for each project so AppBar clicks can
-  // reopen the previous issue/workspace selection.
+  // Persist last selected project to scratch store
+  const setSelectedProjectId = useUiPreferencesStore(
+    (s) => s.setSelectedProjectId
+  );
   useEffect(() => {
-    const route = parseProjectSidebarRoute(location.pathname);
-    if (!route) {
-      return;
+    if (activeProjectId) {
+      setSelectedProjectId(activeProjectId);
     }
-
-    const pathWithSearch = `${location.pathname}${location.searchStr}`;
-    projectLastPathRef.current[route.projectId] = pathWithSearch;
-  }, [location.pathname, location.searchStr]);
+  }, [activeProjectId, setSelectedProjectId]);
 
   const handleWorkspacesClick = useCallback(() => {
-    navigate(toWorkspaces());
-  }, [navigate]);
+    appNavigation.goToWorkspaces();
+  }, [appNavigation]);
 
   const handleProjectClick = useCallback(
     (projectId: string) => {
-      const rememberedPath = projectLastPathRef.current[projectId];
-      if (rememberedPath) {
-        const resolvedPath = resolveAppPath(rememberedPath);
-        if (resolvedPath) {
-          navigate(resolvedPath);
-          return;
-        }
-      }
-
-      navigate(buildProjectRootPath(projectId));
+      appNavigation.goToProject(projectId);
     },
-    [navigate]
+    [appNavigation]
   );
 
   const handleProjectsDragEnd = useCallback(
@@ -251,12 +252,12 @@ export function SharedAppLayout() {
         await CreateRemoteProjectDialog.show({ organizationId: selectedOrgId });
 
       if (result.action === 'created' && result.project) {
-        navigate(toProject(result.project.id));
+        appNavigation.goToProject(result.project.id);
       }
     } catch {
       // Dialog cancelled
     }
-  }, [navigate, selectedOrgId]);
+  }, [selectedOrgId, appNavigation]);
 
   const handleSignIn = useCallback(async () => {
     try {
@@ -271,15 +272,15 @@ export function SharedAppLayout() {
       try {
         const profile = await OAuthDialog.show({});
         if (profile) {
-          navigate(toMigrate());
+          appNavigation.goToMigrate();
         }
       } catch {
         // Dialog cancelled
       }
     } else {
-      navigate(toMigrate());
+      appNavigation.goToMigrate();
     }
-  }, [isSignedIn, navigate]);
+  }, [isSignedIn, appNavigation]);
 
   return (
     <SyncErrorProvider>
@@ -305,6 +306,8 @@ export function SharedAppLayout() {
             isLoadingProjects={isLoading}
             onSignIn={handleSignIn}
             onMigrate={handleMigrate}
+            onHoverStart={() => setIsAppBarHovered(true)}
+            onHoverEnd={() => setIsAppBarHovered(false)}
             userPopover={
               <AppBarUserPopoverContainer
                 organizations={organizations}
@@ -315,6 +318,7 @@ export function SharedAppLayout() {
             }
             starCount={starCount}
             onlineCount={onlineCount}
+            appVersion={appVersion}
             githubIconPath={siGithub.path}
             discordIconPath={siDiscord.path}
           />
@@ -345,7 +349,7 @@ export function SharedAppLayout() {
             <button
               type="button"
               onClick={() => {
-                navigate(toWorkspaces());
+                appNavigation.goToWorkspaces();
                 setIsDrawerOpen(false);
               }}
               className="flex items-center gap-2 px-4 py-3 text-sm text-normal hover:bg-secondary cursor-pointer"
@@ -439,15 +443,46 @@ export function SharedAppLayout() {
             )}
           </div>
         </MobileDrawer>
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <div className="flex flex-col flex-1 min-w-0">
           <NavbarContainer
             mobileMode={isMobile}
             onCreateOrg={handleCreateOrg}
             onOrgSelect={setSelectedOrgId}
             onOpenDrawer={() => setIsDrawerOpen(true)}
           />
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <Outlet />
+          <div className="relative flex-1 min-h-0">
+            {isWorkspaceSidebarPreviewEnabled &&
+              !sidebarPreview.isPreviewOpen && (
+                <div className="absolute left-0 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2">
+                  <WorkspacesSidebarReopenTag
+                    active={false}
+                    onHoverStart={sidebarPreview.handleHandleHoverStart}
+                    onHoverEnd={sidebarPreview.handleHandleHoverEnd}
+                    ariaLabel="Workspaces"
+                  />
+                </div>
+              )}
+
+            <div className="relative h-full overflow-hidden">
+              {isWorkspaceSidebarPreviewEnabled && (
+                <div
+                  className={cn(
+                    'absolute left-0 top-0 z-30 h-full w-[300px] transition-transform duration-150 ease-out',
+                    sidebarPreview.isPreviewOpen
+                      ? 'translate-x-0 pointer-events-auto'
+                      : '-translate-x-full pointer-events-none'
+                  )}
+                  onMouseEnter={sidebarPreview.handlePreviewHoverStart}
+                  onMouseLeave={sidebarPreview.handlePreviewHoverEnd}
+                >
+                  <div className="h-full w-full overflow-hidden border-r border-border bg-secondary shadow-lg">
+                    <WorkspacesSidebarContainer />
+                  </div>
+                </div>
+              )}
+
+              <Outlet />
+            </div>
           </div>
         </div>
       </div>

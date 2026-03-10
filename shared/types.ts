@@ -118,11 +118,21 @@ workspace_filters: WorkspaceFilterStateData,
 /**
  * Workspace sidebar sort preferences
  */
-workspace_sort: WorkspaceSortStateData, };
+workspace_sort: WorkspaceSortStateData, 
+/**
+ * Last selected organization ID
+ */
+selected_org_id: string | null, 
+/**
+ * Last selected project ID
+ */
+selected_project_id: string | null, };
 
-export type ScratchPayload = { "type": "DRAFT_TASK", "data": string } | { "type": "DRAFT_FOLLOW_UP", "data": DraftFollowUpData } | { "type": "DRAFT_WORKSPACE", "data": DraftWorkspaceData } | { "type": "DRAFT_ISSUE", "data": DraftIssueData } | { "type": "PREVIEW_SETTINGS", "data": PreviewSettingsData } | { "type": "WORKSPACE_NOTES", "data": WorkspaceNotesData } | { "type": "UI_PREFERENCES", "data": UiPreferencesData };
+export type ProjectRepoDefaultsData = { repos: Array<DraftWorkspaceRepo>, };
 
-export enum ScratchType { DRAFT_TASK = "DRAFT_TASK", DRAFT_FOLLOW_UP = "DRAFT_FOLLOW_UP", DRAFT_WORKSPACE = "DRAFT_WORKSPACE", DRAFT_ISSUE = "DRAFT_ISSUE", PREVIEW_SETTINGS = "PREVIEW_SETTINGS", WORKSPACE_NOTES = "WORKSPACE_NOTES", UI_PREFERENCES = "UI_PREFERENCES" }
+export type ScratchPayload = { "type": "DRAFT_TASK", "data": string } | { "type": "DRAFT_FOLLOW_UP", "data": DraftFollowUpData } | { "type": "DRAFT_WORKSPACE", "data": DraftWorkspaceData } | { "type": "DRAFT_ISSUE", "data": DraftIssueData } | { "type": "PREVIEW_SETTINGS", "data": PreviewSettingsData } | { "type": "WORKSPACE_NOTES", "data": WorkspaceNotesData } | { "type": "UI_PREFERENCES", "data": UiPreferencesData } | { "type": "PROJECT_REPO_DEFAULTS", "data": ProjectRepoDefaultsData };
+
+export enum ScratchType { DRAFT_TASK = "DRAFT_TASK", DRAFT_FOLLOW_UP = "DRAFT_FOLLOW_UP", DRAFT_WORKSPACE = "DRAFT_WORKSPACE", DRAFT_ISSUE = "DRAFT_ISSUE", PREVIEW_SETTINGS = "PREVIEW_SETTINGS", WORKSPACE_NOTES = "WORKSPACE_NOTES", UI_PREFERENCES = "UI_PREFERENCES", PROJECT_REPO_DEFAULTS = "PROJECT_REPO_DEFAULTS" }
 
 export type Scratch = { id: string, payload: ScratchPayload, created_at: string, updated_at: string, };
 
@@ -134,11 +144,11 @@ export type Image = { id: string, file_path: string, original_name: string, mime
 
 export type CreateImage = { file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, };
 
-export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, agent_working_dir: string | null, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, };
+export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
 
-export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, agent_working_dir: string | null, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, };
+export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
 
-export type Session = { id: string, workspace_id: string, executor: string | null, created_at: string, updated_at: string, };
+export type Session = { id: string, workspace_id: string, executor: string | null, agent_working_dir: string | null, created_at: string, updated_at: string, };
 
 export type ExecutionProcess = { id: string, session_id: string, run_reason: ExecutionProcessRunReason, executor_action: ExecutorAction, status: ExecutionProcessStatus, exit_code: bigint | null, 
 /**
@@ -262,7 +272,7 @@ export type TagSearchParams = { search: string | null, };
 
 export type TokenResponse = { access_token: string, expires_at: string | null, };
 
-export type UserSystemInfo = { config: Config, analytics_user_id: string, login_status: LoginStatus, environment: Environment, 
+export type UserSystemInfo = { version: string, config: Config, analytics_user_id: string, login_status: LoginStatus, environment: Environment, 
 /**
  * Capabilities supported per executor (e.g., { "CLAUDE_CODE": ["SESSION_FORK"] })
  */
@@ -312,9 +322,13 @@ export type ChangeTargetBranchRequest = { repo_id: string, new_target_branch: st
 
 export type ChangeTargetBranchResponse = { repo_id: string, new_target_branch: string, status: [number, number], };
 
-export type MergeTaskAttemptRequest = { repo_id: string, };
+export type AddWorkspaceRepoRequest = { repo_id: string, target_branch: string, };
 
-export type PushTaskAttemptRequest = { repo_id: string, };
+export type AddWorkspaceRepoResponse = { workspace: Workspace, repo: RepoWithTargetBranch, };
+
+export type MergeWorkspaceRequest = { repo_id: string, };
+
+export type PushWorkspaceRequest = { repo_id: string, };
 
 export type RenameBranchRequest = { new_branch_name: string, };
 
@@ -327,6 +341,8 @@ export type ReviewError = { "type": "process_already_running" };
 export type OpenEditorRequest = { editor_type: string | null, file_path: string | null, };
 
 export type OpenEditorResponse = { url: string | null, };
+
+export type CreateWorkspaceApiRequest = { name: string | null, };
 
 export type LinkedIssueInfo = { remote_project_id: string, issue_id: string, };
 
@@ -344,7 +360,7 @@ export type RunAgentSetupResponse = Record<string, never>;
 
 export type GhCliSetupError = "BREW_MISSING" | "SETUP_HELPER_NOT_SUPPORTED" | { "OTHER": { message: string, } };
 
-export type RebaseTaskAttemptRequest = { repo_id: string, old_base_branch: string | null, new_base_branch: string | null, };
+export type RebaseWorkspaceRequest = { repo_id: string, old_base_branch: string | null, new_base_branch: string | null, };
 
 export type ContinueRebaseRequest = { repo_id: string, };
 
@@ -357,6 +373,12 @@ export type PushError = { "type": "force_push_required" };
 export type PrError = { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "cli_not_logged_in", provider: ProviderKind, } | { "type": "git_cli_not_logged_in" } | { "type": "git_cli_not_installed" } | { "type": "target_branch_not_found", branch: string, } | { "type": "unsupported_provider" };
 
 export type RunScriptError = { "type": "no_script_configured" } | { "type": "process_already_running" };
+
+export type AssociateWorkspaceImagesRequest = { image_ids: Array<string>, };
+
+export type ImportIssueAttachmentsRequest = { issue_id: string, };
+
+export type ImportIssueAttachmentsResponse = { image_ids: Array<string>, };
 
 export type AttachPrResponse = { pr_attached: boolean, pr_url: string | null, pr_number: bigint | null, pr_status: MergeStatus | null, };
 
@@ -388,23 +410,7 @@ export type CreateWorkspaceFromPrResponse = { workspace: Workspace, };
 
 export type CreateFromPrError = { "type": "pr_not_found" } | { "type": "branch_fetch_failed", message: string, } | { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "auth_failed", message: string, } | { "type": "unsupported_provider" };
 
-export type RepoBranchStatus = { repo_id: string, repo_name: string, commits_behind: number | null, commits_ahead: number | null, has_uncommitted_changes: boolean | null, head_oid: string | null, uncommitted_count: number | null, untracked_count: number | null, target_branch_name: string, remote_commits_behind: number | null, remote_commits_ahead: number | null, merges: Array<Merge>, 
-/**
- * True if a `git rebase` is currently in progress in this worktree
- */
-is_rebase_in_progress: boolean, 
-/**
- * Current conflict operation if any
- */
-conflict_op: ConflictOp | null, 
-/**
- * List of files currently in conflicted (unmerged) state
- */
-conflicted_files: Array<string>, 
-/**
- * True if the target branch is a remote branch (merging not allowed, must use PR)
- */
-is_target_remote: boolean, };
+export type RepoBranchStatus = { repo_id: string, repo_name: string, commits_behind: number | null, commits_ahead: number | null, has_uncommitted_changes: boolean | null, head_oid: string | null, uncommitted_count: number | null, untracked_count: number | null, target_branch_name: string, remote_commits_behind: number | null, remote_commits_ahead: number | null, merges: Array<Merge>, is_rebase_in_progress: boolean, conflict_op: ConflictOp | null, conflicted_files: Array<string>, is_target_remote: boolean, };
 
 export type UpdateWorkspace = { archived: boolean | null, pinned: boolean | null, name: string | null, };
 
@@ -603,13 +609,15 @@ export type ExecutorConfigs = { executors: { [key in BaseCodingAgent]?: Executor
 
 export enum BaseAgentCapability { SESSION_FORK = "SESSION_FORK", SETUP_HELPER = "SETUP_HELPER", CONTEXT_USAGE = "CONTEXT_USAGE" }
 
-export type ClaudeCode = { append_prompt: AppendPrompt, claude_code_router?: boolean | null, plan?: boolean | null, approvals?: boolean | null, model?: string | null, agent?: string | null, dangerously_skip_permissions?: boolean | null, disable_api_key?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
+export type ClaudeEffort = "low" | "medium" | "high" | "max";
+
+export type ClaudeCode = { append_prompt: AppendPrompt, claude_code_router?: boolean | null, plan?: boolean | null, approvals?: boolean | null, model?: string | null, effort?: ClaudeEffort | null, agent?: string | null, dangerously_skip_permissions?: boolean | null, disable_api_key?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type Gemini = { append_prompt: AppendPrompt, model?: string | null, yolo?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type Amp = { append_prompt: AppendPrompt, dangerously_allow_all?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
-export type Codex = { append_prompt: AppendPrompt, sandbox?: SandboxMode | null, ask_for_approval?: AskForApproval | null, oss?: boolean | null, model?: string | null, model_reasoning_effort?: ReasoningEffort | null, model_reasoning_summary?: ReasoningSummary | null, model_reasoning_summary_format?: ReasoningSummaryFormat | null, profile?: string | null, base_instructions?: string | null, include_apply_patch_tool?: boolean | null, model_provider?: string | null, compact_prompt?: string | null, developer_instructions?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
+export type Codex = { append_prompt: AppendPrompt, sandbox?: SandboxMode | null, ask_for_approval?: AskForApproval | null, oss?: boolean | null, model?: string | null, model_reasoning_effort?: ReasoningEffort | null, model_reasoning_summary?: ReasoningSummary | null, model_reasoning_summary_format?: ReasoningSummaryFormat | null, profile?: string | null, base_instructions?: string | null, include_apply_patch_tool?: boolean | null, model_provider?: string | null, compact_prompt?: string | null, developer_instructions?: string | null, plan: boolean, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type SandboxMode = "auto" | "read-only" | "workspace-write" | "danger-full-access";
 
@@ -621,7 +629,7 @@ export type ReasoningSummary = "auto" | "concise" | "detailed" | "none";
 
 export type ReasoningSummaryFormat = "none" | "experimental";
 
-export type CursorAgent = { append_prompt: AppendPrompt, force?: boolean | null, model?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
+export type CursorAgent = { append_prompt: AppendPrompt, force?: boolean | null, model?: string | null, reasoning?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type Copilot = { append_prompt: AppendPrompt, model?: string | null, allow_all_tools?: boolean | null, allow_tool?: string | null, deny_tool?: string | null, add_dir?: Array<string> | null, disable_mcp_server?: Array<string> | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 

@@ -7,7 +7,6 @@ import { ThemeMode } from 'shared/types';
 import i18n from '@/i18n';
 import { useUserSystem } from '@/shared/hooks/useUserSystem';
 import { ThemeProvider } from '@web/app/providers/ThemeProvider';
-import { usePreviousPath } from '@/shared/hooks/usePreviousPath';
 import { useUiPreferencesScratch } from '@/shared/hooks/useUiPreferencesScratch';
 import { ReleaseNotesDialog } from '@/shared/dialogs/global/ReleaseNotesDialog';
 import { WorkspaceProvider } from '@/shared/providers/WorkspaceProvider';
@@ -15,6 +14,7 @@ import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
 import { ExecutionProcessesProvider } from '@/shared/providers/ExecutionProcessesProvider';
 import { LogsPanelProvider } from '@/shared/providers/LogsPanelProvider';
 import { ActionsProvider } from '@/shared/providers/ActionsProvider';
+import { UserProvider } from '@/shared/providers/remote/UserProvider';
 import '@/app/styles/new/index.css';
 
 function ExecutionProcessesProviderWrapper({
@@ -35,7 +35,6 @@ function RootRouteComponent() {
   const posthog = usePostHog();
   const location = useLocation();
 
-  usePreviousPath();
   useUiPreferencesScratch();
 
   useEffect(() => {
@@ -84,11 +83,13 @@ function RootRouteComponent() {
         <WorkspaceProvider>
           <ExecutionProcessesProviderWrapper>
             <LogsPanelProvider>
-              <ActionsProvider>
-                <NiceModalProvider>
-                  <Outlet />
-                </NiceModalProvider>
-              </ActionsProvider>
+              <UserProvider>
+                <ActionsProvider>
+                  <NiceModalProvider>
+                    <Outlet />
+                  </NiceModalProvider>
+                </ActionsProvider>
+              </UserProvider>
             </LogsPanelProvider>
           </ExecutionProcessesProviderWrapper>
         </WorkspaceProvider>

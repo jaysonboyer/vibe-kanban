@@ -25,7 +25,7 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: *runner_label
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -47,6 +47,7 @@ jobs:
               - 'packages/ui/**'
               - 'shared/**'
               - 'scripts/check-i18n.sh'
+              - 'scripts/check-unused-i18n-keys.mjs'
               - 'scripts/check-legacy-frontend-paths.sh'
               - 'scripts/legacy-frontend-paths-allowlist.txt'
               - 'pnpm-lock.yaml'
@@ -62,6 +63,7 @@ jobs:
               - 'crates/executors/**'
               - 'crates/git/**'
               - 'crates/local-deployment/**'
+              - 'crates/mcp/**'
               - 'crates/review/**'
               - 'crates/server/**'
               - 'crates/services/**'
@@ -79,11 +81,13 @@ jobs:
               - '.github/actions/**'
             backend-remote:
               - 'crates/remote/**'
+              - 'crates/relay-tunnel/**'
               - 'crates/api-types/**'
               - 'crates/utils/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'shared/**'
+              - 'rustfmt.toml'
               - 'rust-toolchain.toml'
               - '.cargo/**'
               - 'pnpm-lock.yaml'
@@ -110,7 +114,7 @@ jobs:
         run: |
           npx concurrently \
             --kill-others-on-fail \
-            --names "local:lint,local:fmt,local:build,remote:fmt,remote:build,ui:check,ui:lint,ui:fmt,core:check,core:fmt,i18n,legacy" \
+            --names "local:lint,local:fmt,local:build,remote:fmt,remote:build,ui:check,ui:lint,ui:fmt,core:check,core:fmt,i18n,i18n:unused,legacy" \
             --timings \
             "cd packages/local-web && npm run lint" \
             "cd packages/local-web && npm run format:check" \
@@ -123,6 +127,7 @@ jobs:
             "cd packages/web-core && npm run check" \
             "cd packages/web-core && npm run format:check" \
             "GITHUB_BASE_REF=${{ github.base_ref || 'main' }} ./scripts/check-i18n.sh" \
+            "node scripts/check-unused-i18n-keys.mjs" \
             "./scripts/check-legacy-frontend-paths.sh"
 
   backend-schema-checks:
@@ -166,6 +171,7 @@ jobs:
         uses: ./.github/actions/cargo-checks-common-setup
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt
           cache-key: backend-remote-checks-${{ runner.os }}-${{ runner.arch }}-${{ env.RUNNER_LABEL }}
           setup-node: 'true'
           setup-sqlx-cli: 'true'
@@ -178,6 +184,12 @@ jobs:
       - name: Check remote Cargo.lock is consistent
         run: |
           cargo metadata --locked --format-version 1 --manifest-path crates/remote/Cargo.toml > /dev/null
+          cargo metadata --locked --format-version 1 --manifest-path crates/relay-tunnel/Cargo.toml > /dev/null
+
+      - name: Check formatting
+        run: |
+          cargo fmt --all --manifest-path crates/remote/Cargo.toml -- --check
+          cargo fmt --all --manifest-path crates/relay-tunnel/Cargo.toml -- --check
 
       - name: Check generated types
         run: npm run remote:generate-types:check

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -10,8 +9,8 @@ import {
   ExecutionProcessStatus,
 } from 'shared/types';
 import { AgentIcon } from '@/shared/components/AgentIcon';
-import { useAttemptExecution } from '@/shared/hooks/useAttemptExecution';
-import { useAttemptRepo } from '@/shared/hooks/useAttemptRepo';
+import { useWorkspaceExecution } from '@/shared/hooks/useWorkspaceExecution';
+import { useWorkspaceRepo } from '@/shared/hooks/useWorkspaceRepo';
 import { useUserSystem } from '@/shared/hooks/useUserSystem';
 import WYSIWYGEditor from '@/shared/components/WYSIWYGEditor';
 import { useApprovalFeedbackOptional } from '../model/contexts/ApprovalFeedbackContext';
@@ -29,7 +28,7 @@ import { useSessionSend } from '../model/hooks/useSessionSend';
 import { useSessionAttachments } from '../model/hooks/useSessionAttachments';
 import { useMessageEditRetry } from '../model/hooks/useMessageEditRetry';
 import { useBranchStatus } from '@/shared/hooks/useBranchStatus';
-import { useAttemptBranch } from '../model/hooks/useAttemptBranch';
+import { useWorkspaceBranch } from '../model/hooks/useWorkspaceBranch';
 import { useApprovalMutation } from '../model/hooks/useApprovalMutation';
 import { useApprovals } from '@/shared/hooks/useApprovals';
 import { ResolveConflictsDialog } from '@/shared/dialogs/tasks/ResolveConflictsDialog';
@@ -47,7 +46,6 @@ import {
   useWorkspacePanelState,
   RIGHT_MAIN_PANEL_MODES,
 } from '@/shared/stores/useUiPreferencesStore';
-import { toWorkspace } from '@/shared/lib/routes/navigation';
 import { useInspectModeStore } from '../model/store/useInspectModeStore';
 import { Actions } from '@/shared/actions';
 import {
@@ -61,6 +59,7 @@ import { SettingsDialog } from '@/shared/dialogs/settings/SettingsDialog';
 import { useActionVisibilityContext } from '@/shared/hooks/useActionVisibilityContext';
 import { PrCommentsDialog } from '@/shared/dialogs/tasks/PrCommentsDialog';
 import type { NormalizedComment } from '@vibe/ui/components/pr-comment-node';
+import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 
 /** Compute execution status from boolean flags */
 function computeExecutionStatus(params: {
@@ -161,7 +160,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 
   const sessionId = session?.id;
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
+  const appNavigation = useAppNavigation();
 
   const { executeAction } = useActions();
   const actionCtx = useActionVisibilityContext();
@@ -178,8 +177,8 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 
   const handleOpenWorkspace = useCallback(() => {
     if (!workspaceId) return;
-    navigate(toWorkspace(workspaceId));
-  }, [navigate, workspaceId]);
+    appNavigation.goToWorkspace(workspaceId);
+  }, [appNavigation, workspaceId]);
 
   // Get entries early to extract pending approval for scratch key
   const { entries } = useEntries();
@@ -187,7 +186,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 
   // Execution state
   const { isAttemptRunning, stopExecution, isStopping, processes } =
-    useAttemptExecution(workspaceId);
+    useWorkspaceExecution(workspaceId);
 
   // Approvals state
   const { getPendingForProcess } = useApprovals();
@@ -235,7 +234,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   }, [pendingApproval?.approvalId, isNewSessionMode, workspaceId, sessionId]);
 
   // Get repos for file search
-  const { repos } = useAttemptRepo(workspaceId);
+  const { repos } = useWorkspaceRepo(workspaceId);
   const repoIds = repos.map((r) => r.id);
 
   // Approval feedback context
@@ -289,7 +288,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   }, [branchStatus]);
 
   // Get workspace branch for conflict resolution dialog
-  const { branch: attemptBranch } = useAttemptBranch(workspaceId);
+  const { branch: attemptBranch } = useWorkspaceBranch(workspaceId);
 
   // Find the first repo with conflicts (for the resolve dialog)
   const repoWithConflicts = useMemo(
@@ -395,27 +394,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   ]);
 
   const { uploadFiles, localImages, clearUploadedImages } =
-    useSessionAttachments(workspaceId, handleInsertMarkdown);
-
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      const imageFiles = acceptedFiles.filter((f) =>
-        f.type.startsWith('image/')
-      );
-      if (imageFiles.length > 0) {
-        uploadFiles(imageFiles);
-      }
-    },
-    [uploadFiles]
-  );
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: { 'image/*': [] },
-    disabled: mode === 'placeholder' || isAttemptRunning,
-    noClick: true,
-    noKeyboard: true,
-  });
+    useSessionAttachments(workspaceId, sessionId, handleInsertMarkdown);
 
   // Unified executor + variant + model selector options resolution
   const {
@@ -617,6 +596,37 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
     setLocalMessage('');
   });
 
+  const areAttachmentInputsDisabled =
+    mode === 'placeholder' ||
+    isQueued ||
+    isSending ||
+    isStopping ||
+    !!feedbackContext?.isSubmitting ||
+    editRetryMutation.isPending ||
+    isApproving ||
+    isDenying ||
+    isAnswering;
+
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      const imageFiles = acceptedFiles.filter((f) =>
+        f.type.startsWith('image/')
+      );
+      if (imageFiles.length > 0) {
+        uploadFiles(imageFiles);
+      }
+    },
+    [uploadFiles]
+  );
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'image/*': [] },
+    disabled: areAttachmentInputsDisabled,
+    noClick: true,
+    noKeyboard: true,
+  });
+
   // Handle edit submission
   const handleSubmitEdit = useCallback(async () => {
     if (!editContext.activeEdit || !localMessage.trim() || !executorConfig)
@@ -660,7 +670,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
     if (!repoId) return;
 
     const result = await PrCommentsDialog.show({
-      attemptId: workspaceId,
+      workspaceId: workspaceId,
       repoId,
     });
     if (result.comments.length > 0) {
@@ -863,19 +873,21 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
         className="min-h-double max-h-[50vh] overflow-y-auto"
         repoIds={repoIds}
         executor={executor}
+        sessionId={sessionId}
         autoFocus
         onPasteFiles={onPasteFiles}
         localImages={localImages}
         sendShortcut={config?.send_message_shortcut}
       />
     ),
-    [config?.send_message_shortcut]
+    [config?.send_message_shortcut, sessionId]
   );
 
   const modelSelectorNode = effectiveExecutor ? (
     <ModelSelectorContainer
       agent={effectiveExecutor}
       workspaceId={workspaceId}
+      sessionId={sessionId}
       onAdvancedSettings={handleCustomise}
       presets={variantOptions}
       selectedPreset={selectedVariant}

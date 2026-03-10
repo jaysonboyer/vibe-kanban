@@ -1,14 +1,24 @@
-import { useCallback, useEffect, useRef } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from '@tanstack/react-router';
 import { Group, Layout, Panel, Separator } from 'react-resizable-panels';
+import type { CreateModeInitialState } from '@/shared/types/createMode';
 import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
 import { usePageTitle } from '@/shared/hooks/usePageTitle';
 import { useIsMobile } from '@/shared/hooks/useIsMobile';
 import { useMobileActiveTab } from '@/shared/stores/useUiPreferencesStore';
 import { cn } from '@/shared/lib/utils';
-import { ExecutionProcessesProvider } from '@/shared/providers/ExecutionProcessesProvider';
-import { CreateModeProvider } from '@/integrations/CreateModeProvider';
+import { CreateModeProvider } from '@/features/create-mode/model/CreateModeProvider';
+import {
+  consumeCreateModeSeedState,
+  getCreateModeSeedVersion,
+  subscribeCreateModeSeedState,
+} from '@/features/create-mode/model/createModeSeedStore';
 import { ReviewProvider } from '@/shared/hooks/ReviewProvider';
 import { ChangesViewProvider } from '@/shared/hooks/ChangesViewProvider';
 import { WorkspacesSidebarContainer } from './WorkspacesSidebarContainer';
@@ -30,19 +40,18 @@ import {
   useWorkspacePanelState,
   RIGHT_MAIN_PANEL_MODES,
 } from '@/shared/stores/useUiPreferencesStore';
-import { toWorkspace } from '@/shared/lib/routes/navigation';
+import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 
 const WORKSPACES_GUIDE_ID = 'workspaces-guide';
 
 export function WorkspacesLayout() {
-  const navigate = useNavigate();
+  const appNavigation = useAppNavigation();
   const {
     workspaceId,
     workspace: selectedWorkspace,
     isLoading,
     isCreateMode,
     selectedSession,
-    selectedSessionId,
     sessions,
     selectSession,
     repos,
@@ -55,6 +64,47 @@ export function WorkspacesLayout() {
     isCreateMode ? t('workspaces.newWorkspace') : selectedWorkspace?.name
   );
 
+  const seedVersion = useSyncExternalStore(
+    subscribeCreateModeSeedState,
+    getCreateModeSeedVersion,
+    getCreateModeSeedVersion
+  );
+  const consumedSeedVersionRef = useRef(0);
+  const [createModeSeed, setCreateModeSeed] = useState<{
+    version: number;
+    state: CreateModeInitialState | null;
+  }>({
+    version: 0,
+    state: null,
+  });
+
+  useEffect(() => {
+    if (!isCreateMode) {
+      consumedSeedVersionRef.current = 0;
+      setCreateModeSeed((current) =>
+        current.version === 0 && current.state === null
+          ? current
+          : { version: 0, state: null }
+      );
+      return;
+    }
+
+    if (seedVersion === 0 || seedVersion === consumedSeedVersionRef.current) {
+      return;
+    }
+
+    consumedSeedVersionRef.current = seedVersion;
+    setCreateModeSeed({
+      version: seedVersion,
+      state: consumeCreateModeSeedState(),
+    });
+  }, [isCreateMode, seedVersion]);
+
+  const createModeProviderKey =
+    createModeSeed.version > 0
+      ? `create-mode-seed-${createModeSeed.version}`
+      : 'create-mode-seed-default';
+
   const isMobile = useIsMobile();
   const [mobileTab] = useMobileActiveTab();
   const mainContainerRef = useRef<WorkspacesMainContainerHandle>(null);
@@ -65,9 +115,9 @@ export function WorkspacesLayout() {
 
   const handleWorkspaceCreated = useCallback(
     (workspaceId: string) => {
-      navigate(toWorkspace(workspaceId));
+      appNavigation.goToWorkspace(workspaceId);
     },
-    [navigate]
+    [appNavigation]
   );
 
   // Use workspace-specific panel state (pass undefined when in create mode)
@@ -139,7 +189,7 @@ export function WorkspacesLayout() {
   // WebSocket connections and scroll positions across tab switches.
   if (isMobile) {
     const mobileContent = (
-      <ReviewProvider attemptId={selectedWorkspace?.id}>
+      <ReviewProvider workspaceId={selectedWorkspace?.id}>
         <ChangesViewProvider>
           <div className="flex flex-col h-full min-h-0">
             {/* Workspaces tab */}
@@ -189,7 +239,7 @@ export function WorkspacesLayout() {
               {selectedWorkspace?.id && (
                 <ChangesPanelContainer
                   className=""
-                  attemptId={selectedWorkspace.id}
+                  workspaceId={selectedWorkspace.id}
                 />
               )}
             </div>
@@ -213,7 +263,7 @@ export function WorkspacesLayout() {
             >
               {selectedWorkspace?.id && (
                 <PreviewBrowserContainer
-                  attemptId={selectedWorkspace.id}
+                  workspaceId={selectedWorkspace.id}
                   className=""
                 />
               )}
@@ -243,14 +293,14 @@ export function WorkspacesLayout() {
       <div className="flex flex-1 min-h-0 h-full">
         <div className="flex-1 min-w-0 h-full">
           {isCreateMode ? (
-            <CreateModeProvider>{mobileContent}</CreateModeProvider>
-          ) : (
-            <ExecutionProcessesProvider
-              key={`${selectedWorkspace?.id}-${selectedSessionId}`}
-              sessionId={selectedSessionId}
+            <CreateModeProvider
+              key={createModeProviderKey}
+              initialState={createModeSeed.state}
             >
               {mobileContent}
-            </ExecutionProcessesProvider>
+            </CreateModeProvider>
+          ) : (
+            mobileContent
           )}
         </div>
       </div>
@@ -258,7 +308,7 @@ export function WorkspacesLayout() {
   }
 
   const mainContent = (
-    <ReviewProvider attemptId={selectedWorkspace?.id}>
+    <ReviewProvider workspaceId={selectedWorkspace?.id}>
       <ChangesViewProvider>
         <div className="flex h-full">
           <Group
@@ -309,7 +359,7 @@ export function WorkspacesLayout() {
                   selectedWorkspace?.id && (
                     <ChangesPanelContainer
                       className=""
-                      attemptId={selectedWorkspace.id}
+                      workspaceId={selectedWorkspace.id}
                     />
                   )}
                 {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.LOGS && (
@@ -318,7 +368,7 @@ export function WorkspacesLayout() {
                 {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.PREVIEW &&
                   selectedWorkspace?.id && (
                     <PreviewBrowserContainer
-                      attemptId={selectedWorkspace.id}
+                      workspaceId={selectedWorkspace.id}
                       className=""
                     />
                   )}
@@ -350,14 +400,14 @@ export function WorkspacesLayout() {
 
       <div className="flex-1 min-w-0 h-full">
         {isCreateMode ? (
-          <CreateModeProvider>{mainContent}</CreateModeProvider>
-        ) : (
-          <ExecutionProcessesProvider
-            key={`${selectedWorkspace?.id}-${selectedSessionId}`}
-            sessionId={selectedSessionId}
+          <CreateModeProvider
+            key={createModeProviderKey}
+            initialState={createModeSeed.state}
           >
             {mainContent}
-          </ExecutionProcessesProvider>
+          </CreateModeProvider>
+        ) : (
+          mainContent
         )}
       </div>
     </div>

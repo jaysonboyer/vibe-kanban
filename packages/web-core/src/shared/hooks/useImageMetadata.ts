@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ImageMetadata } from 'shared/types';
-import type { LocalImageMetadata } from '@vibe/ui/components/TaskAttemptContext';
+import type { LocalImageMetadata } from '@vibe/ui/components/WorkspaceContext';
 
 export function useImageMetadata(
-  taskAttemptId: string | undefined,
+  workspaceId: string | undefined,
+  sessionId: string | undefined,
   src: string,
   localImages?: LocalImageMetadata[]
 ) {
@@ -33,21 +34,21 @@ export function useImageMetadata(
   );
 
   // Only fetch from API if: vibe image, has context, and NO local image
-  const shouldFetch = isVibeImage && !!taskAttemptId && !localImage;
+  const shouldFetch = isVibeImage && !!workspaceId && !localImage;
 
   const query = useQuery({
-    queryKey: ['imageMetadata', taskAttemptId, src],
+    queryKey: ['imageMetadata', workspaceId, sessionId, src],
     queryFn: async (): Promise<ImageMetadata | null> => {
-      if (taskAttemptId) {
+      if (workspaceId && sessionId) {
         const res = await fetch(
-          `/api/task-attempts/${taskAttemptId}/images/metadata?path=${encodeURIComponent(src)}`
+          `/api/workspaces/${workspaceId}/images/metadata?path=${encodeURIComponent(src)}&session_id=${sessionId}`
         );
         const data = await res.json();
         return data.data as ImageMetadata | null;
       }
       return null;
     },
-    enabled: shouldFetch,
+    enabled: shouldFetch && !!sessionId,
     staleTime: Infinity,
   });
 

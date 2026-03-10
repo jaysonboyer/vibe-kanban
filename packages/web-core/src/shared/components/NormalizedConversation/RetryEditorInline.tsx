@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@vibe/ui/components/Alert';
 import { AlertCircle, Loader2, Paperclip, Send, X } from 'lucide-react';
 import { imagesApi } from '@/shared/lib/api';
 import type { WorkspaceWithSession } from '@/shared/types/attempt';
-import { useAttemptExecution } from '@/shared/hooks/useAttemptExecution';
+import { useWorkspaceExecution } from '@/shared/hooks/useWorkspaceExecution';
 import { useUserSystem } from '@/shared/hooks/useUserSystem';
 import { useBranchStatus } from '@/shared/hooks/useBranchStatus';
 import { useVariant } from '@/shared/hooks/useVariant';
@@ -27,9 +27,9 @@ export function RetryEditorInline({
   onCancelled?: () => void;
 }) {
   const { t } = useTranslation(['common']);
-  const attemptId = attempt.id;
-  const { isAttemptRunning, attemptData } = useAttemptExecution(attemptId);
-  const { data: branchStatus } = useBranchStatus(attemptId);
+  const workspaceId = attempt.id;
+  const { isAttemptRunning, attemptData } = useWorkspaceExecution(workspaceId);
+  const { data: branchStatus } = useBranchStatus(workspaceId);
   const { profiles } = useUserSystem();
 
   const [message, setMessage] = useState(initialContent);
@@ -97,9 +97,22 @@ export function RetryEditorInline({
   // Handle image paste - upload to container and insert markdown
   const handlePasteFiles = useCallback(
     async (files: File[]) => {
+      const sessionId = attempt.session?.id;
+      if (!sessionId) {
+        console.warn(
+          'Skipping retry image upload: missing session id for attempt',
+          workspaceId
+        );
+        return;
+      }
+
       for (const file of files) {
         try {
-          const response = await imagesApi.uploadForAttempt(attemptId, file);
+          const response = await imagesApi.uploadForAttempt(
+            workspaceId,
+            sessionId,
+            file
+          );
           const imageMarkdown = `![${response.original_name}](${response.file_path})`;
           setMessage((prev) =>
             prev ? `${prev}\n\n${imageMarkdown}` : imageMarkdown
@@ -109,7 +122,7 @@ export function RetryEditorInline({
         }
       }
     },
-    [attemptId]
+    [attempt.session?.id, workspaceId]
   );
 
   // Attachment button handlers
@@ -141,7 +154,8 @@ export function RetryEditorInline({
           onCmdEnter={handleCmdEnter}
           onPasteFiles={handlePasteFiles}
           className={cn('min-h-[40px]', 'bg-background')}
-          taskAttemptId={attemptId}
+          workspaceId={workspaceId}
+          sessionId={attempt.session?.id}
         />
         {isSending && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/60">
