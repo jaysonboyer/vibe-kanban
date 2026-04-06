@@ -135,25 +135,31 @@ Show live output so the user can follow progress.
 
 ### 8. Install Globally via Symlink
 
-Create or update the symlink at `/opt/homebrew/bin/vibe-kanban` pointing directly to the workspace `cli.js`. This approach is stable across nvm version switches and doesn't depend on npm global install paths.
+Create or update the symlink at `~/.local/bin/vibe-kanban` pointing directly to the workspace `cli.js`. This approach is stable across nvm version switches and doesn't depend on npm global install paths.
+
+**IMPORTANT: Check if the symlink already exists before creating it.** If `~/.local/bin/vibe-kanban` already points to the workspace `cli.js`, skip this step entirely — the build already updated the binaries it uses.
 
 ```bash
-# Remove any existing symlink or binary at the target
-rm -f /opt/homebrew/bin/vibe-kanban
-ln -s /Users/jayboyer/workspace/vibe-kanban/npx-cli/bin/cli.js /opt/homebrew/bin/vibe-kanban
+# Check first
+ls -la ~/.local/bin/vibe-kanban 2>/dev/null || echo "NOT FOUND"
+
+# Only create if missing or pointing elsewhere
+mkdir -p ~/.local/bin
+rm -f ~/.local/bin/vibe-kanban
+ln -s /Users/jayboyer/workspace/vibe-kanban/npx-cli/bin/cli.js ~/.local/bin/vibe-kanban
 ```
 
 The symlink works because `cli.js` has a `#!/usr/bin/env node` shebang and activates LOCAL_DEV_MODE automatically when `npx-cli/dist/` exists.
 
-**Note:** If there's an old npm global install (e.g. from Homebrew's node), remove it first:
+**Note:** If there's an old npm global install, remove it first:
 ```bash
-/opt/homebrew/bin/npm uninstall -g vibe-kanban 2>/dev/null || true
+npm uninstall -g vibe-kanban 2>/dev/null || true
 ```
 
 ### 9. Verify Installation
 
 ```bash
-ls -la /opt/homebrew/bin/vibe-kanban
+ls -la ~/.local/bin/vibe-kanban
 which vibe-kanban
 ```
 
@@ -163,7 +169,7 @@ Confirm the symlink points to the workspace `cli.js`.
 
 Provide a clear summary:
 - ✅ Build successful (`production` or `dev` — whichever was chosen)
-- 🔗 Symlink: `/opt/homebrew/bin/vibe-kanban` → `/Users/jayboyer/workspace/vibe-kanban/npx-cli/bin/cli.js`
+- 🔗 Symlink: `~/.local/bin/vibe-kanban` → `/Users/jayboyer/workspace/vibe-kanban/npx-cli/bin/cli.js`
 - 🔖 Version: `<version from package.json>`
 - 💡 To run: `vibe-kanban`
 - 💡 MCP configs (`~/.claude.json`, `~/Library/Application Support/Claude/claude_desktop_config.json`) should use `node npx-cli/bin/cli.js --mcp` instead of `npx -y vibe-kanban@latest --mcp`
@@ -184,10 +190,11 @@ Provide a clear summary:
 
 ### Symlink Creation Fails (Permissions)
 
-If `ln -s` fails with permission denied for `/opt/homebrew/bin/`:
+If `ln -s` fails with permission denied:
 ```bash
-# Use sudo
-sudo ln -s /Users/jayboyer/workspace/vibe-kanban/npx-cli/bin/cli.js /opt/homebrew/bin/vibe-kanban
+mkdir -p ~/.local/bin
+chmod u+w ~/.local/bin
+ln -s /Users/jayboyer/workspace/vibe-kanban/npx-cli/bin/cli.js ~/.local/bin/vibe-kanban
 ```
 
 ### Stale Binaries After Rebuild
@@ -198,7 +205,7 @@ The symlink always points to the latest build. After `pnpm run build:npx` comple
 
 To remove the symlink:
 ```bash
-rm /opt/homebrew/bin/vibe-kanban
+rm ~/.local/bin/vibe-kanban
 ```
 
 ## Notes

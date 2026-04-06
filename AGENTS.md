@@ -36,7 +36,7 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 - Prepare SQLx (offline): `pnpm run prepare-db`
 - Prepare SQLx (remote package, postgres): `pnpm run remote:prepare-db`
 - Local NPX build: `pnpm run build:npx` then `pnpm pack` in `npx-cli/`
-- Global install (symlink): `ln -s $(pwd)/npx-cli/bin/cli.js /opt/homebrew/bin/vibe-kanban` (remove old `npm uninstall -g vibe-kanban` first; symlink auto-picks up new builds after each `build:npx`)
+- Global install (symlink): `ln -s $(pwd)/npx-cli/bin/cli.js ~/.local/bin/vibe-kanban` (remove old `npm uninstall -g vibe-kanban` first; symlink auto-picks up new builds after each `build:npx`)
 - Format code: `pnpm run format` (runs `cargo fmt` for all backend Rust workspaces + web-core/web Prettier)
 - Lint: `pnpm run lint` (runs web/ui ESLint + `cargo clippy` for all backend Rust workspaces)
 
