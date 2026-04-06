@@ -3,7 +3,7 @@ use db::models::{
     session::Session,
 };
 use rmcp::{
-    ErrorData, handler::server::tool::Parameters, model::CallToolResult, schemars, tool,
+    ErrorData, handler::server::wrapper::Parameters, model::CallToolResult, schemars, tool,
     tool_router,
 };
 use serde::{Deserialize, Serialize};
@@ -19,12 +19,15 @@ struct CreateSessionRequest {
     workspace_id: Option<Uuid>,
     #[schemars(description = "Optional executor to pin this session to")]
     executor: Option<String>,
+    #[schemars(description = "Optional display name for the session")]
+    name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct CreateSessionPayload {
     workspace_id: Uuid,
     executor: Option<String>,
+    name: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -33,6 +36,8 @@ struct SessionSummary {
     id: String,
     #[schemars(description = "Workspace ID")]
     workspace_id: String,
+    #[schemars(description = "Session display name (if set)")]
+    name: Option<String>,
     #[schemars(description = "Session executor (if set)")]
     executor: Option<String>,
     #[schemars(description = "Creation timestamp")]
@@ -99,6 +104,26 @@ struct RunCodingAgentInSessionResponse {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct UpdateSessionRequest {
+    #[schemars(description = "Session ID to update")]
+    session_id: Uuid,
+    #[schemars(description = "Set session display name (empty string clears it)")]
+    name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateSessionPayload {
+    name: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct UpdateSessionResponse {
+    success: bool,
+    session_id: String,
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct GetExecutionRequest {
     #[schemars(description = "Execution ID to inspect")]
     execution_id: Uuid,
@@ -123,14 +148,15 @@ impl McpServer {
         Parameters(CreateSessionRequest {
             workspace_id,
             executor,
+            name,
         }): Parameters<CreateSessionRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let workspace_id = match self.resolve_workspace_id(workspace_id) {
             Ok(id) => id,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
         if let Err(error_result) = self.scope_allows_workspace(workspace_id) {
-            return Ok(error_result);
+            return Ok(Self::tool_error(error_result));
         }
 
         let payload = CreateSessionPayload {
@@ -143,12 +169,20 @@ impl McpServer {
                     Some(trimmed.to_string())
                 }
             }),
+            name: name.and_then(|value| {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }),
         };
 
         let url = self.url("/api/sessions");
         let session: Session = match self.send_json(self.client.post(&url).json(&payload)).await {
             Ok(value) => value,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
 
         Self::success(&CreateSessionResponse {
@@ -163,16 +197,16 @@ impl McpServer {
     ) -> Result<CallToolResult, ErrorData> {
         let workspace_id = match self.resolve_workspace_id(workspace_id) {
             Ok(id) => id,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
         if let Err(error_result) = self.scope_allows_workspace(workspace_id) {
-            return Ok(error_result);
+            return Ok(Self::tool_error(error_result));
         }
 
         let url = self.url(&format!("/api/sessions?workspace_id={workspace_id}"));
         let sessions: Vec<Session> = match self.send_json(self.client.get(&url)).await {
             Ok(value) => value,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
 
         let sessions = sessions
@@ -184,6 +218,37 @@ impl McpServer {
             workspace_id: workspace_id.to_string(),
             total_count: sessions.len(),
             sessions,
+        })
+    }
+
+    #[tool(description = "Update a session's name. `session_id` is required.")]
+    async fn update_session(
+        &self,
+        Parameters(UpdateSessionRequest { session_id, name }): Parameters<UpdateSessionRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        // Verify session exists and check scope
+        let session_url = self.url(&format!("/api/sessions/{session_id}"));
+        let session: Session = match self.send_json(self.client.get(&session_url)).await {
+            Ok(value) => value,
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
+        };
+        if let Err(error_result) = self.scope_allows_workspace(session.workspace_id) {
+            return Ok(Self::tool_error(error_result));
+        }
+
+        let payload = UpdateSessionPayload {
+            name: name.map(|value| value.trim().to_string()),
+        };
+        let url = self.url(&format!("/api/sessions/{session_id}"));
+        let updated: Session = match self.send_json(self.client.put(&url).json(&payload)).await {
+            Ok(value) => value,
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
+        };
+
+        Self::success(&UpdateSessionResponse {
+            success: true,
+            session_id: updated.id.to_string(),
+            name: updated.name,
         })
     }
 
@@ -204,10 +269,10 @@ impl McpServer {
         let session_url = self.url(&format!("/api/sessions/{session_id}"));
         let session: Session = match self.send_json(self.client.get(&session_url)).await {
             Ok(value) => value,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
         if let Err(error_result) = self.scope_allows_workspace(session.workspace_id) {
-            return Ok(error_result);
+            return Ok(Self::tool_error(error_result));
         }
         if self.orchestrator_session_id() == Some(session_id) {
             return Self::err(
@@ -221,7 +286,7 @@ impl McpServer {
 
         let executor_config = match Self::executor_config_payload_for_session(&session) {
             Ok(config) => config,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
 
         let payload = FollowUpPayload {
@@ -236,13 +301,13 @@ impl McpServer {
         let execution_process: ExecutionProcess =
             match self.send_json(self.client.post(&url).json(&payload)).await {
                 Ok(value) => value,
-                Err(error_result) => return Ok(error_result),
+                Err(error_result) => return Ok(Self::tool_error(error_result)),
             };
 
         let execution_id = execution_process.id.to_string();
         let execution = match Self::serialize_execution_process(&execution_process) {
             Ok(value) => value,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
 
         Self::success(&RunCodingAgentInSessionResponse {
@@ -261,23 +326,23 @@ impl McpServer {
         let execution_process: ExecutionProcess =
             match self.send_json(self.client.get(&process_url)).await {
                 Ok(value) => value,
-                Err(error_result) => return Ok(error_result),
+                Err(error_result) => return Ok(Self::tool_error(error_result)),
             };
 
         let session_url = self.url(&format!("/api/sessions/{}", execution_process.session_id));
         let session: Session = match self.send_json(self.client.get(&session_url)).await {
             Ok(value) => value,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
         if let Err(error_result) = self.scope_allows_workspace(session.workspace_id) {
-            return Ok(error_result);
+            return Ok(Self::tool_error(error_result));
         }
 
         let is_finished = execution_process.status != ExecutionProcessStatus::Running;
 
         let execution_process_value = match Self::serialize_execution_process(&execution_process) {
             Ok(value) => value,
-            Err(error_result) => return Ok(error_result),
+            Err(error_result) => return Ok(Self::tool_error(error_result)),
         };
 
         Self::success(&GetExecutionResponse {
@@ -294,7 +359,7 @@ impl McpServer {
 impl McpServer {
     fn executor_config_payload_for_session(
         session: &Session,
-    ) -> Result<ExecutorConfigPayload, CallToolResult> {
+    ) -> Result<ExecutorConfigPayload, super::ToolError> {
         Ok(ExecutorConfigPayload {
             executor: Self::normalize_executor_name(session.executor.as_deref())?,
             variant: None,
@@ -310,6 +375,7 @@ impl McpServer {
         SessionSummary {
             id: session.id.to_string(),
             workspace_id: session.workspace_id.to_string(),
+            name: session.name,
             executor: session.executor,
             created_at: session.created_at.to_rfc3339(),
             updated_at: session.updated_at.to_rfc3339(),
@@ -319,13 +385,12 @@ impl McpServer {
 
     fn serialize_execution_process(
         execution_process: &ExecutionProcess,
-    ) -> Result<serde_json::Value, CallToolResult> {
+    ) -> Result<serde_json::Value, super::ToolError> {
         serde_json::to_value(execution_process).map_err(|error| {
-            Self::err(
-                "Failed to serialize execution process response".to_string(),
+            super::ToolError::new(
+                "Failed to serialize execution process response",
                 Some(error.to_string()),
             )
-            .unwrap()
         })
     }
 }

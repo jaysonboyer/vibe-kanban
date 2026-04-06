@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use db::{
     DBService,
     models::{
-        image::WorkspaceImage,
+        file::WorkspaceAttachment,
         repo::{Repo, RepoError},
         requests::WorkspaceRepoInput,
         session::Session,
@@ -157,12 +157,13 @@ impl ManagedWorkspace {
         Ok(())
     }
 
-    pub async fn associate_images(&self, image_ids: &[Uuid]) -> Result<(), sqlx::Error> {
-        if image_ids.is_empty() {
+    pub async fn associate_attachments(&self, attachment_ids: &[Uuid]) -> Result<(), sqlx::Error> {
+        if attachment_ids.is_empty() {
             return Ok(());
         }
 
-        WorkspaceImage::associate_many_dedup(&self.db.pool, self.workspace.id, image_ids).await
+        WorkspaceAttachment::associate_many_dedup(&self.db.pool, self.workspace.id, attachment_ids)
+            .await
     }
 
     pub async fn prepare_deletion_context(&self) -> Result<WorkspaceDeletionContext, sqlx::Error> {
@@ -464,7 +465,7 @@ impl WorkspaceManager {
     /// New layout: workspace_dir contains worktrees at workspace_dir/{repo_name}
     ///
     /// Returns Ok(true) if migration was performed, Ok(false) if no migration needed.
-    pub async fn migrate_legacy_worktree(
+    async fn migrate_legacy_worktree(
         workspace_dir: &Path,
         repo: &Repo,
     ) -> Result<bool, WorkspaceError> {

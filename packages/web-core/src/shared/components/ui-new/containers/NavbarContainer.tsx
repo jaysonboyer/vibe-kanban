@@ -1,4 +1,5 @@
 import { useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
 import { useUserContext } from '@/shared/hooks/useUserContext';
 import { useActions } from '@/shared/hooks/useActions';
@@ -8,10 +9,15 @@ import { useOrganizationStore } from '@/shared/stores/useOrganizationStore';
 import {
   Navbar,
   type NavbarSectionItem,
+  type NavbarBreadcrumbItem,
   type MobileTabId,
 } from '@vibe/ui/components/Navbar';
+import { useAllOrganizationProjects } from '@/shared/hooks/useAllOrganizationProjects';
+import { useShape } from '@/shared/integrations/electric/hooks';
+import { PROJECT_ISSUES_SHAPE } from 'shared/remote-types';
 import { RemoteIssueLink } from './RemoteIssueLink';
 import { AppBarUserPopoverContainer } from './AppBarUserPopoverContainer';
+import { useUserSystem } from '@/shared/hooks/useUserSystem';
 import { NavbarActionGroups } from '@/shared/actions';
 import {
   NavbarDivider,
@@ -32,6 +38,7 @@ import { SettingsDialog } from '@/shared/dialogs/settings/SettingsDialog';
 import { getProjectDestination } from '@/shared/lib/routes/appNavigation';
 import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 import { useCurrentAppDestination } from '@/shared/hooks/useCurrentAppDestination';
+import { getRemoteAuthDegradedMessage } from '@/shared/lib/auth/remoteAuthDegraded';
 
 /**
  * Check if a NavbarItem is a divider
@@ -117,10 +124,12 @@ export function NavbarContainer({
   onOrgSelect?: (orgId: string) => void;
   onOpenDrawer?: () => void;
 }) {
+  const { t } = useTranslation('common');
   const { executeAction } = useActions();
   const { workspace: selectedWorkspace, isCreateMode } = useWorkspaceContext();
   const { workspaces } = useUserContext();
   const syncErrorContext = useSyncErrorContext();
+  const { remoteAuthDegraded } = useUserSystem();
   const appNavigation = useAppNavigation();
   const destination = useCurrentAppDestination();
   const projectDestination = useMemo(
@@ -197,6 +206,80 @@ export function NavbarContainer({
         ? orgName
         : selectedWorkspace?.branch;
 
+  // Breadcrumbs: Project / Issue / Workspace (only on workspace pages with linked project)
+  const linkedProjectId = linkedRemoteWorkspace?.project_id ?? null;
+  const linkedIssueId = linkedRemoteWorkspace?.issue_id ?? null;
+  const shouldResolveBreadcrumbData =
+    !isOnProjectPage && !isCreateMode && !isMigratePage && !!linkedProjectId;
+  const shouldResolveIssueBreadcrumb =
+    shouldResolveBreadcrumbData && !!linkedIssueId;
+
+  const { data: allProjects, isLoading: isProjectsLoading } =
+    useAllOrganizationProjects({
+      enabled: shouldResolveBreadcrumbData,
+    });
+  const { data: projectIssues, isLoading: isProjectIssuesLoading } = useShape(
+    PROJECT_ISSUES_SHAPE,
+    { project_id: linkedProjectId || '' },
+    { enabled: shouldResolveIssueBreadcrumb }
+  );
+  const linkedProject = allProjects.find((p) => p.id === linkedProjectId);
+  const isWaitingForProjectBreadcrumb =
+    shouldResolveBreadcrumbData && !linkedProject && isProjectsLoading;
+  const isWaitingForIssueBreadcrumb =
+    shouldResolveIssueBreadcrumb && isProjectIssuesLoading;
+  const isWaitingForBreadcrumbData =
+    isWaitingForProjectBreadcrumb || isWaitingForIssueBreadcrumb;
+
+  const breadcrumbs = useMemo((): NavbarBreadcrumbItem[] | undefined => {
+    if (
+      !shouldResolveBreadcrumbData ||
+      !linkedProjectId ||
+      isWaitingForBreadcrumbData
+    ) {
+      return undefined;
+    }
+
+    const project = linkedProject;
+    if (!project) return undefined;
+
+    const items: NavbarBreadcrumbItem[] = [
+      {
+        label: project.name,
+        onClick: () => appNavigation.goToProject(linkedProjectId),
+      },
+    ];
+
+    if (linkedIssueId) {
+      const issue = projectIssues.find((i) => i.id === linkedIssueId);
+      if (issue) {
+        items.push({
+          label: issue.simple_id,
+          onClick: () =>
+            appNavigation.goToProjectIssue(linkedProjectId, linkedIssueId),
+        });
+      }
+    }
+
+    const workspaceLabel =
+      selectedWorkspace?.name || selectedWorkspace?.branch || '';
+    if (workspaceLabel) {
+      items.push({ label: workspaceLabel });
+    }
+
+    return items.length > 1 ? items : undefined;
+  }, [
+    shouldResolveBreadcrumbData,
+    linkedProjectId,
+    linkedIssueId,
+    linkedProject,
+    isWaitingForBreadcrumbData,
+    projectIssues,
+    selectedWorkspace?.name,
+    selectedWorkspace?.branch,
+    appNavigation,
+  ]);
+
   // Mobile-specific callbacks
   const handleOpenCommandBar = useCallback(() => {
     CommandBarDialog.show();
@@ -241,12 +324,31 @@ export function NavbarContainer({
     onCreateOrg,
     onOrgSelect,
   ]);
+
+  const syncErrors = useMemo(() => {
+    const errors = syncErrorContext?.errors ? [...syncErrorContext.errors] : [];
+
+    if (remoteAuthDegraded) {
+      errors.push({
+        streamId: 'remote-auth-degraded',
+        tableName: 'Remote authentication',
+        error: {
+          message: getRemoteAuthDegradedMessage(remoteAuthDegraded, t),
+        },
+        retry: () => window.location.reload(),
+      });
+    }
+
+    return errors;
+  }, [remoteAuthDegraded, syncErrorContext?.errors, t]);
+
   return (
     <Navbar
       workspaceTitle={navbarTitle}
+      breadcrumbs={breadcrumbs}
       leftItems={leftItems}
       rightItems={rightItems}
-      syncErrors={syncErrorContext?.errors}
+      syncErrors={syncErrors}
       mobileMode={mobileMode}
       mobileUserSlot={userPopoverSlot}
       isOnProjectPage={isOnProjectPage}
@@ -259,6 +361,8 @@ export function NavbarContainer({
       mobileActiveTab={mobileActiveTab as MobileTabId}
       onMobileTabChange={(tab) => setMobileActiveTab(tab)}
       leftSlot={
+        !breadcrumbs &&
+        !isWaitingForBreadcrumbData &&
         linkedRemoteWorkspace?.issue_id ? (
           <RemoteIssueLink
             projectId={linkedRemoteWorkspace.project_id}

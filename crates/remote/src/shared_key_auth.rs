@@ -18,7 +18,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 #[derive(Debug)]
-pub struct SharedKeyAuthorizationPolicy {
+pub(crate) struct SharedKeyAuthorizationPolicy {
     pub account: String,
     pub key: Secret,
 }
@@ -123,9 +123,9 @@ fn canonicalized_resource(account: &str, uri: &Url) -> String {
     }
     can_res.push('\n');
 
-    let query_pairs = uri.query_pairs();
+    let query_pairs: Vec<_> = uri.query_pairs().collect();
     let mut qps = Vec::new();
-    for (q, _) in query_pairs.clone() {
+    for (q, _) in query_pairs {
         if !qps.iter().any(|x: &String| x == &*q) {
             qps.push(q.into_owned());
         }
@@ -148,7 +148,7 @@ fn canonicalized_resource(account: &str, uri: &Url) -> String {
     can_res[..can_res.len() - 1].to_owned()
 }
 
-pub fn hmac_sha256(data: &str, key: &Secret) -> String {
+pub(crate) fn hmac_sha256(data: &str, key: &Secret) -> String {
     let key = BASE64_STANDARD.decode(key.secret()).unwrap();
     let mut hmac = Hmac::<Sha256>::new_from_slice(&key).unwrap();
     hmac.update(data.as_bytes());

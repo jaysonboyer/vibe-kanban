@@ -141,6 +141,15 @@ pub struct UiPreferencesData {
     /// Last selected project ID
     #[serde(default)]
     pub selected_project_id: Option<String>,
+    /// Default setting for creating a draft workspace from new issues
+    #[serde(default)]
+    pub create_draft_workspace_by_default: Option<bool>,
+    /// Kanban project view selections (active view per project)
+    #[serde(default)]
+    pub kanban_project_view_selections: std::collections::HashMap<String, serde_json::Value>,
+    /// Kanban project view preferences (filters, toggles per project per view)
+    #[serde(default)]
+    pub kanban_project_view_preferences: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Linked issue data for draft workspace scratch
@@ -152,9 +161,9 @@ pub struct DraftWorkspaceLinkedIssue {
     pub remote_project_id: String,
 }
 
-/// Uploaded image stored in a draft workspace
+/// Uploaded attachment stored in a draft workspace
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct DraftWorkspaceImage {
+pub struct DraftWorkspaceAttachment {
     pub id: Uuid,
     pub file_path: String,
     pub original_name: String,
@@ -174,7 +183,7 @@ pub struct DraftWorkspaceData {
     #[serde(default)]
     pub linked_issue: Option<DraftWorkspaceLinkedIssue>,
     #[serde(default)]
-    pub images: Vec<DraftWorkspaceImage>,
+    pub attachments: Vec<DraftWorkspaceAttachment>,
 }
 
 /// Repository entry in a draft workspace

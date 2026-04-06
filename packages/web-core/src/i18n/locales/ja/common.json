@@ -61,18 +61,14 @@
     },
     "subagent": {
       "defaultType": "サブエージェント"
-    }
+    },
+    "loadingEarlierMessages": "以前のメッセージを読み込み中"
   },
   "language": {
     "browserDefault": "ブラウザ設定"
   },
   "states": {
-    "error": "エラー",
-    "loading": "読み込み中...",
-    "loadingHistory": "履歴を読み込み中",
-    "reconnecting": "再接続中",
-    "saving": "保存中...",
-    "success": "成功"
+    "loading": "読み込み中..."
   },
   "orgSwitcher": {
     "organizations": "組織",
@@ -513,12 +509,20 @@
     "default": "デフォルト",
     "model": "モデル"
   },
+  "crashScreen": {
+    "title": "問題が発生しました",
+    "description": "アプリケーションで予期しないエラーが発生しました。",
+    "reload": "再読み込み",
+    "showDetails": "詳細を表示",
+    "hideDetails": "詳細を非表示"
+  },
   "syncError": {
     "networkErrors": "ネットワークエラー",
     "streamsAffected": "{{count}}件のストリームが影響を受けています",
     "streamsAffected_other": "{{count}}件のストリームが影響を受けています",
     "status": "(ステータス {{status}})",
-    "refreshPage": "ページを更新"
+    "refreshPage": "ページを更新",
+    "remoteAuthUnavailable": "リモート認証は一時的に利用できません。復旧するまで、一部のリモート機能は利用できない可能性があります。"
   },
   "onboardingSignIn": {
     "subtitle": "Sign in to continue",
@@ -536,7 +540,7 @@
   },
   "appBar": {
     "kanban": {
-      "tooltip": "カンバン",
+      "tooltip": "サインインしてプロジェクトを表示",
       "title": "カンバンボード",
       "description": "サインインしてカンバンボードでコーディングエージェントを整理しましょう。",
       "migrateOldProjects": "古いプロジェクトを移行"

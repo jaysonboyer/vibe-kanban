@@ -8,9 +8,10 @@ use api_types::{
     MigratePullRequestRequest, MigrateWorkspaceRequest,
 };
 use db::models::{
-    merge::{Merge, MergeStatus, PrMerge},
+    merge::{MergeStatus, PrMerge},
     migration_state::{CreateMigrationState, EntityType, MigrationState, MigrationStatus},
     project::Project,
+    pull_request::PullRequest,
     task::{Task, TaskStatus},
     workspace::Workspace,
 };
@@ -103,15 +104,6 @@ impl MigrationService {
             workspaces: Self::entity_report_from_states(&workspaces),
             warnings: vec![],
         })
-    }
-
-    pub async fn resume_migration(
-        &self,
-        organization_id: Uuid,
-        project_ids: HashSet<Uuid>,
-    ) -> Result<MigrationReport, MigrationError> {
-        MigrationState::reset_failed(&self.sqlite_pool).await?;
-        self.run_migration(organization_id, project_ids).await
     }
 
     async fn migrate_projects(
@@ -318,7 +310,11 @@ impl MigrationService {
         project_ids: &HashSet<Uuid>,
         report: &mut MigrationReport,
     ) -> Result<(), MigrationError> {
-        let all_pr_merges = Merge::find_all_pr(&self.sqlite_pool).await?;
+        let all_pr_merges: Vec<PrMerge> = PullRequest::find_all_with_workspace(&self.sqlite_pool)
+            .await?
+            .iter()
+            .map(|pr| pr.to_pr_merge())
+            .collect();
 
         let mut pr_merges = Vec::new();
         for pr_merge in all_pr_merges {

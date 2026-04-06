@@ -52,7 +52,9 @@ export function WorkspacesLayout() {
     isLoading,
     isCreateMode,
     selectedSession,
+    selectedSessionId,
     sessions,
+    isSessionsLoading,
     selectSession,
     repos,
     isNewSessionMode,
@@ -109,9 +111,12 @@ export function WorkspacesLayout() {
   const [mobileTab] = useMobileActiveTab();
   const mainContainerRef = useRef<WorkspacesMainContainerHandle>(null);
 
-  const handleScrollToBottom = useCallback(() => {
-    mainContainerRef.current?.scrollToBottom();
-  }, []);
+  const handleScrollToBottom = useCallback(
+    (behavior: 'auto' | 'smooth' = 'smooth') => {
+      mainContainerRef.current?.scrollToBottom(behavior);
+    },
+    []
+  );
 
   const handleWorkspaceCreated = useCallback(
     (workspaceId: string) => {
@@ -179,10 +184,25 @@ export function WorkspacesLayout() {
         }
       : { 'left-main': 50, 'right-main': 50 };
 
-  const onLayoutChange = (layout: Layout) => {
-    if (isLeftMainPanelVisible && rightMainPanelMode !== null)
-      setRightMainPanelSize(layout['right-main']);
-  };
+  const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
+    };
+  }, []);
+
+  const onLayoutChange = useCallback(
+    (layout: Layout) => {
+      if (isLeftMainPanelVisible && rightMainPanelMode !== null) {
+        if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
+        layoutTimerRef.current = setTimeout(() => {
+          setRightMainPanelSize(layout['right-main']);
+        }, 150);
+      }
+    },
+    [isLeftMainPanelVisible, rightMainPanelMode, setRightMainPanelSize]
+  );
 
   // ── Mobile layout ──────────────────────────────────────────────────
   // Uses `hidden` CSS class (NOT conditional rendering) to preserve
@@ -220,9 +240,12 @@ export function WorkspacesLayout() {
                   ref={mainContainerRef}
                   selectedWorkspace={selectedWorkspace ?? null}
                   selectedSession={selectedSession}
+                  selectedSessionId={selectedSessionId}
                   sessions={sessions}
+                  repos={repos}
                   onSelectSession={selectSession}
                   isLoading={isLoading}
+                  isSessionsLoading={isSessionsLoading}
                   isNewSessionMode={isNewSessionMode}
                   onStartNewSession={startNewSession}
                 />
@@ -332,9 +355,12 @@ export function WorkspacesLayout() {
                     ref={mainContainerRef}
                     selectedWorkspace={selectedWorkspace ?? null}
                     selectedSession={selectedSession}
+                    selectedSessionId={selectedSessionId}
                     sessions={sessions}
+                    repos={repos}
                     onSelectSession={selectSession}
                     isLoading={isLoading}
+                    isSessionsLoading={isSessionsLoading}
                     isNewSessionMode={isNewSessionMode}
                     onStartNewSession={startNewSession}
                   />

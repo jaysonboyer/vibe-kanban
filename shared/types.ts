@@ -32,9 +32,9 @@ export type UpdateTag = { tag_name: string | null, content: string | null, };
 
 export type DraftFollowUpData = { message: string, executor_config: ExecutorConfig, };
 
-export type DraftWorkspaceData = { message: string, repos: Array<DraftWorkspaceRepo>, executor_config: ExecutorConfig | null, linked_issue: DraftWorkspaceLinkedIssue | null, images: Array<DraftWorkspaceImage>, };
+export type DraftWorkspaceData = { message: string, repos: Array<DraftWorkspaceRepo>, executor_config: ExecutorConfig | null, linked_issue: DraftWorkspaceLinkedIssue | null, attachments: Array<DraftWorkspaceAttachment>, };
 
-export type DraftWorkspaceImage = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, };
+export type DraftWorkspaceAttachment = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, };
 
 export type DraftWorkspaceLinkedIssue = { issue_id: string, simple_id: string, title: string, remote_project_id: string, };
 
@@ -126,7 +126,19 @@ selected_org_id: string | null,
 /**
  * Last selected project ID
  */
-selected_project_id: string | null, };
+selected_project_id: string | null, 
+/**
+ * Default setting for creating a draft workspace from new issues
+ */
+create_draft_workspace_by_default: boolean | null, 
+/**
+ * Kanban project view selections (active view per project)
+ */
+kanban_project_view_selections: { [key in string]?: JsonValue }, 
+/**
+ * Kanban project view preferences (filters, toggles per project per view)
+ */
+kanban_project_view_preferences: { [key in string]?: JsonValue }, };
 
 export type ProjectRepoDefaultsData = { repos: Array<DraftWorkspaceRepo>, };
 
@@ -140,15 +152,11 @@ export type CreateScratch = { payload: ScratchPayload, };
 
 export type UpdateScratch = { payload: ScratchPayload, };
 
-export type Image = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
-
-export type CreateImage = { file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, };
-
 export type Workspace = { id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
 
 export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, };
 
-export type Session = { id: string, workspace_id: string, executor: string | null, agent_working_dir: string | null, created_at: string, updated_at: string, };
+export type Session = { id: string, workspace_id: string, name: string | null, executor: string | null, agent_working_dir: string | null, created_at: string, updated_at: string, };
 
 export type ExecutionProcess = { id: string, session_id: string, run_reason: ExecutionProcessRunReason, executor_action: ExecutorAction, status: ExecutionProcessStatus, exit_code: bigint | null, 
 /**
@@ -200,7 +208,7 @@ export type DiffChangeKind = "added" | "deleted" | "modified" | "renamed" | "cop
 
 export type ApiResponse<T, E = T> = { success: boolean, data: T | null, error_data: E | null, message: string | null, };
 
-export type LoginStatus = { "status": "loggedout" } | { "status": "loggedin", profile: ProfileResponse, };
+export type LoginStatus = { "status": "loggedout" } | { "status": "loggedin", profile: ProfileResponse | null, };
 
 export type ProfileResponse = { user_id: string, username: string | null, email: string, providers: Array<ProviderProfile>, };
 
@@ -272,7 +280,7 @@ export type TagSearchParams = { search: string | null, };
 
 export type TokenResponse = { access_token: string, expires_at: string | null, };
 
-export type UserSystemInfo = { version: string, config: Config, analytics_user_id: string, login_status: LoginStatus, environment: Environment, 
+export type UserSystemInfo = { version: string, config: Config, machine_id: string, login_status: LoginStatus, remote_auth_degraded: string | null, environment: Environment, 
 /**
  * Capabilities supported per executor (e.g., { "CLAUDE_CODE": ["SESSION_FORK"] })
  */
@@ -342,15 +350,29 @@ export type OpenEditorRequest = { editor_type: string | null, file_path: string 
 
 export type OpenEditorResponse = { url: string | null, };
 
+export type OpenRemoteEditorResponse = { url: string, local_port: number, ssh_alias: string, };
+
+export type OpenRemoteWorkspaceInEditorRequest = { host_id: string, workspace_id: string, editor_type: string | null, file_path: string | null, };
+
+export type PairRelayHostRequest = { host_id: string, host_name: string, enrollment_code: string, };
+
+export type PairRelayHostResponse = { paired: boolean, };
+
+export type RelayPairedHost = { host_id: string, host_name: string | null, paired_at: string | null, };
+
+export type ListRelayPairedHostsResponse = { hosts: Array<RelayPairedHost>, };
+
+export type RemoveRelayPairedHostResponse = { removed: boolean, };
+
 export type CreateWorkspaceApiRequest = { name: string | null, };
 
 export type LinkedIssueInfo = { remote_project_id: string, issue_id: string, };
 
 export type CreatePrApiRequest = { title: string, body: string | null, target_branch: string | null, draft: boolean | null, repo_id: string, auto_generate_description: boolean, };
 
-export type ImageResponse = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
+export type AttachmentResponse = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
 
-export type ImageMetadata = { exists: boolean, file_name: string | null, path: string | null, size_bytes: bigint | null, format: string | null, proxy_url: string | null, };
+export type AttachmentMetadata = { exists: boolean, file_name: string | null, path: string | null, size_bytes: bigint | null, format: string | null, proxy_url: string | null, };
 
 export type WorkspaceRepoInput = { repo_id: string, target_branch: string, };
 
@@ -374,11 +396,11 @@ export type PrError = { "type": "cli_not_installed", provider: ProviderKind, } |
 
 export type RunScriptError = { "type": "no_script_configured" } | { "type": "process_already_running" };
 
-export type AssociateWorkspaceImagesRequest = { image_ids: Array<string>, };
+export type AssociateWorkspaceAttachmentsRequest = { attachment_ids: Array<string>, };
 
 export type ImportIssueAttachmentsRequest = { issue_id: string, };
 
-export type ImportIssueAttachmentsResponse = { image_ids: Array<string>, };
+export type ImportIssueAttachmentsResponse = { attachment_ids: Array<string>, };
 
 export type AttachPrResponse = { pr_attached: boolean, pr_url: string | null, pr_number: bigint | null, pr_status: MergeStatus | null, };
 
@@ -390,7 +412,7 @@ export type GetPrCommentsError = { "type": "no_pr_attached" } | { "type": "cli_n
 
 export type GetPrCommentsQuery = { repo_id: string, };
 
-export type CreateAndStartWorkspaceRequest = { name: string | null, repos: Array<WorkspaceRepoInput>, linked_issue: LinkedIssueInfo | null, executor_config: ExecutorConfig, prompt: string, image_ids: Array<string> | null, };
+export type CreateAndStartWorkspaceRequest = { name: string | null, repos: Array<WorkspaceRepoInput>, linked_issue: LinkedIssueInfo | null, executor_config: ExecutorConfig, prompt: string, attachment_ids: Array<string> | null, };
 
 export type CreateAndStartWorkspaceResponse = { workspace: Workspace, execution_process: ExecutionProcess, };
 
@@ -398,11 +420,13 @@ export type UnifiedPrComment = { "comment_type": "general", id: string, author: 
 
 export type ProviderKind = "git_hub" | "azure_dev_ops" | "unknown";
 
-export type OpenPrInfo = { number: bigint, url: string, title: string, head_branch: string, base_branch: string, };
+export type PullRequestDetail = { number: bigint, url: string, status: MergeStatus, merged_at: string | null, merge_commit_sha: string | null, title: string, base_branch: string, head_branch: string, };
 
 export type GitRemote = { name: string, url: string, };
 
 export type ListPrsError = { "type": "cli_not_installed", provider: ProviderKind, } | { "type": "auth_failed", message: string, } | { "type": "unsupported_provider" };
+
+export type LinkPrToIssueRequest = { pr_url: string, pr_number: number, base_branch: string, };
 
 export type CreateWorkspaceFromPrBody = { repo_id: string, pr_number: bigint, pr_title: string, pr_url: string, head_branch: string, base_branch: string, run_setup: boolean, remote_name: string | null, };
 
@@ -413,6 +437,8 @@ export type CreateFromPrError = { "type": "pr_not_found" } | { "type": "branch_f
 export type RepoBranchStatus = { repo_id: string, repo_name: string, commits_behind: number | null, commits_ahead: number | null, has_uncommitted_changes: boolean | null, head_oid: string | null, uncommitted_count: number | null, untracked_count: number | null, target_branch_name: string, remote_commits_behind: number | null, remote_commits_ahead: number | null, merges: Array<Merge>, is_rebase_in_progress: boolean, conflict_op: ConflictOp | null, conflicted_files: Array<string>, is_target_remote: boolean, };
 
 export type UpdateWorkspace = { archived: boolean | null, pinned: boolean | null, name: string | null, };
+
+export type UpdateSession = { name: string | null, };
 
 export type WorkspaceSummaryRequest = { archived: boolean, };
 
@@ -476,7 +502,7 @@ export type DirectoryListResponse = { entries: Array<DirectoryEntry>, current_pa
 
 export type SearchMode = "taskform" | "settings";
 
-export type Config = { config_version: string, theme: ThemeMode, executor_profile: ExecutorProfileId, disclaimer_acknowledged: boolean, onboarding_acknowledged: boolean, remote_onboarding_acknowledged: boolean, notifications: NotificationConfig, editor: EditorConfig, github: GitHubConfig, analytics_enabled: boolean, workspace_dir: string | null, last_app_version: string | null, show_release_notes: boolean, language: UiLanguage, git_branch_prefix: string, showcases: ShowcaseState, pr_auto_description_enabled: boolean, pr_auto_description_prompt: string | null, commit_reminder_enabled: boolean, commit_reminder_prompt: string | null, send_message_shortcut: SendMessageShortcut, relay_enabled: boolean, relay_host_name: string | null, };
+export type Config = { config_version: string, theme: ThemeMode, executor_profile: ExecutorProfileId, disclaimer_acknowledged: boolean, onboarding_acknowledged: boolean, remote_onboarding_acknowledged: boolean, notifications: NotificationConfig, editor: EditorConfig, github: GitHubConfig, analytics_enabled: boolean, workspace_dir: string | null, last_app_version: string | null, show_release_notes: boolean, language: UiLanguage, git_branch_prefix: string, showcases: ShowcaseState, pr_auto_description_enabled: boolean, pr_auto_description_prompt: string | null, commit_reminder_enabled: boolean, commit_reminder_prompt: string | null, send_message_shortcut: SendMessageShortcut, relay_enabled: boolean, host_nickname: string | null, };
 
 export type NotificationConfig = { sound_enabled: boolean, push_enabled: boolean, sound_file: SoundFile, };
 
@@ -796,6 +822,80 @@ permissions: Array<PermissionPolicy>, };
 export type ExecutorDiscoveredOptions = { model_selector: ModelSelectorConfig, slash_commands: Array<SlashCommandDescription>, loading_models: boolean, loading_agents: boolean, loading_slash_commands: boolean, error: string | null, };
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]?: JsonValue } | null;
+
+export type RelayWsMessageType = "text" | "binary" | "ping" | "pong" | "close";
+
+export type DataChannelMessage = { "type": "http_request" } & DataChannelRequest | { "type": "http_response" } & DataChannelResponse | { "type": "ws_open" } & WsOpen | { "type": "ws_opened" } & WsOpened | { "type": "ws_frame" } & WsFrame | { "type": "ws_close" } & WsClose | { "type": "ws_error" } & WsError;
+
+export type DataChannelRequest = { id: string, method: string, path: string, headers: { [key in string]?: Array<string> }, 
+/**
+ * Base64-encoded request body, if any.
+ */
+body_b64?: string | null, };
+
+export type DataChannelResponse = { id: string, status: number, headers: { [key in string]?: Array<string> }, 
+/**
+ * Base64-encoded response body, if any.
+ */
+body_b64?: string | null, };
+
+export type WsOpen = { 
+/**
+ * Unique connection ID for multiplexing.
+ */
+conn_id: string, 
+/**
+ * Target path, e.g. `/api/sessions/abc/queue`.
+ */
+path: string, 
+/**
+ * Optional sub-protocol(s) to negotiate.
+ */
+protocols?: string | null, };
+
+export type WsOpened = { conn_id: string, 
+/**
+ * The sub-protocol selected by the server, if any.
+ */
+selected_protocol?: string | null, };
+
+export type WsFrame = { conn_id: string, msg_type: RelayWsMessageType, 
+/**
+ * Base64-encoded payload.
+ */
+payload_b64?: string | null, };
+
+export type WsClose = { conn_id: string, 
+/**
+ * Close code (RFC 6455 §7.4).
+ */
+code?: number | null, 
+/**
+ * Close reason.
+ */
+reason?: string | null, };
+
+export type WsError = { conn_id: string, error: string, };
+
+export type SdpOffer = { 
+/**
+ * The SDP string from the peer's `RTCPeerConnection.createOffer()`.
+ */
+sdp: string, 
+/**
+ * Caller-provided session identifier to correlate offer/answer/candidates.
+ */
+session_id: string, };
+
+export type SdpAnswer = { 
+/**
+ * The SDP string from `Rtc::direct_api().create_answer()`.
+ */
+sdp: string, 
+/**
+ * Echoed session identifier from the offer.
+ */
+session_id: string, };
 
 export const DEFAULT_PR_DESCRIPTION_PROMPT = "Update the PR that was just created with a better title and description.\nThe PR number is #{pr_number} and the URL is {pr_url}.\n\nAnalyze the changes in this branch and write:\n1. A concise, descriptive title that summarizes the changes, postfixed with \"(Vibe Kanban)\"\n2. A detailed description that explains:\n   - What changes were made\n   - Why they were made (based on the task context)\n   - Any important implementation details\n   - At the end, include a note: \"This PR was written using [Vibe Kanban](https://vibekanban.com)\"\n\nUse the appropriate CLI tool to update the PR (gh pr edit for GitHub, az repos pr update for Azure DevOps).";
 
