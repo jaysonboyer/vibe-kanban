@@ -63,6 +63,15 @@ fn docker_rmi(reference: &str) {
         .output();
 }
 
+/// Returns `true` when something is already listening on the given local
+/// TCP port. Used to detect a running `vibe-kanban remote up` stack before
+/// trying to start the e2e namespace (whose compose file hardcodes the
+/// same host-port mappings — they cannot coexist).
+fn port_is_bound(port: u16) -> bool {
+    use std::{net::TcpStream, time::Duration};
+    TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(250)).is_ok()
+}
+
 /// Path to the vibe-kanban repo root (the directory containing `crates/`).
 /// Resolved from CARGO_MANIFEST_DIR (= `crates/server`) two levels up.
 fn workspace_repo_root() -> PathBuf {
@@ -144,6 +153,21 @@ fn remote_lifecycle_smoke() {
         String::from_utf8_lossy(&init.stderr),
     );
     assert!(env_path.exists(), "init should have created .env.remote");
+
+    // The compose file binds host ports unconditionally (5433 for postgres,
+    // 3000 for remote-server) — a per-PID compose namespace still has to
+    // share host ports. Detect collisions before invoking compose so the
+    // user gets a clear "stop the live stack first" message instead of an
+    // opaque docker bind error.
+    for (port, service) in [(5433u16, "remote-db (Postgres)"), (3000, "remote-server")] {
+        if port_is_bound(port) {
+            eprintln!(
+                "port {port} is already in use ({service}) — skipping e2e test. \
+                 Stop the live stack with `vibe-kanban remote down` and re-run."
+            );
+            return;
+        }
+    }
 
     // Defensive cleanup of any leftover from a previous failed run.
     cleanup_project(bin, &env_path, &project);
