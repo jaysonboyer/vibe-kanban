@@ -253,14 +253,22 @@ async fn run_server() -> Result<(), VibeKanbanError> {
         actual_proxy_port
     );
 
-    deployment
+    if let Err(_e) = deployment
         .client_info()
         .set_server_addr(main_listener.local_addr()?)
-        .expect("client server address already set");
-    deployment
+    {
+        tracing::warn!(
+            "client_info.set_server_addr called twice in the same process; ignoring (benign during re-init)"
+        );
+    }
+    if let Err(_e) = deployment
         .client_info()
         .set_preview_proxy_port(actual_proxy_port)
-        .expect("client preview proxy port already set");
+    {
+        tracing::warn!(
+            "client_info.set_preview_proxy_port called twice in the same process; ignoring (benign during re-init)"
+        );
+    }
 
     let app_router = routes::router(deployment.clone());
 

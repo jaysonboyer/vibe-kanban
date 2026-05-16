@@ -41,14 +41,24 @@ impl ServerHandle {
         // Start relay tunnel so the host registers with the relay server.
         // This must happen after the port is known (it's needed for local
         // proxying) and is shared between the standalone binary and Tauri.
-        self.deployment
+        if let Err(_e) = self
+            .deployment
             .client_info()
             .set_server_addr(self.main_listener.local_addr()?)
-            .expect("client server address already set");
-        self.deployment
+        {
+            tracing::warn!(
+                "client_info.set_server_addr called twice in the same process; ignoring (benign during re-init)"
+            );
+        }
+        if let Err(_e) = self
+            .deployment
             .client_info()
             .set_preview_proxy_port(self.proxy_port)
-            .expect("client preview proxy port already set");
+        {
+            tracing::warn!(
+                "client_info.set_preview_proxy_port called twice in the same process; ignoring (benign during re-init)"
+            );
+        }
         relay_registration::spawn_relay(&self.deployment).await;
 
         let app_router = routes::router(self.deployment.clone());
