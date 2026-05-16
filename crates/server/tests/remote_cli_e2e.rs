@@ -26,6 +26,43 @@ fn docker_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Look up an image ID by `<repo>:<tag>` — returns the trimmed ID string when
+/// present, or `None` when docker has no such image.
+fn image_id(reference: &str) -> Option<String> {
+    let out = Command::new("docker")
+        .args(["images", "--format", "{{.ID}}", "--quiet", reference])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Tag `source` as `target` so a `docker compose up --no-build` against a
+/// unique per-test project namespace can reuse an image that was originally
+/// built under a different (default) namespace. Returns `Ok(())` on success.
+fn docker_tag(source: &str, target: &str) -> Result<(), String> {
+    let out = Command::new("docker")
+        .args(["tag", source, target])
+        .output()
+        .map_err(|e| format!("spawn docker tag: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "docker tag {source} {target}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+fn docker_rmi(reference: &str) {
+    let _ = Command::new("docker")
+        .args(["rmi", "--no-prune", reference])
+        .output();
+}
+
 /// Path to the vibe-kanban repo root (the directory containing `crates/`).
 /// Resolved from CARGO_MANIFEST_DIR (= `crates/server`) two levels up.
 fn workspace_repo_root() -> PathBuf {
@@ -57,11 +94,15 @@ struct CleanupGuard<'a> {
     bin: &'a str,
     env: &'a Path,
     project: &'a str,
+    tagged_image: Option<String>,
 }
 
 impl Drop for CleanupGuard<'_> {
     fn drop(&mut self) {
         cleanup_project(self.bin, self.env, self.project);
+        if let Some(image) = &self.tagged_image {
+            docker_rmi(image);
+        }
     }
 }
 
@@ -107,11 +148,34 @@ fn remote_lifecycle_smoke() {
     // Defensive cleanup of any leftover from a previous failed run.
     cleanup_project(bin, &env_path, &project);
 
-    // Drop guard so down -v runs even on assertion panic.
+    // Per-PID compose project means docker would normally need a fresh
+    // build of `<project>-remote-server:latest`. To keep this test fast we
+    // tag the existing default-namespace image (built by the user's normal
+    // `vibe-kanban remote up` workflow) into the test namespace. Skip the
+    // test cleanly when no source image exists — running `vibe-kanban
+    // remote up --build` once outside the test is the prerequisite.
+    let test_image = format!("{project}-remote-server:latest");
+    let default_image = "vibe-kanban-remote-remote-server:latest";
+    if image_id(default_image).is_none() {
+        eprintln!(
+            "source image `{default_image}` not found — skipping e2e test. \
+             Build it once with: `vibe-kanban remote up --build` (or `\
+             docker compose --project-directory crates/remote --env-file <path> \
+             -p vibe-kanban-remote build remote-server`) before re-running."
+        );
+        return;
+    }
+    if let Err(e) = docker_tag(default_image, &test_image) {
+        eprintln!("failed to alias build cache into test namespace: {e}");
+        return;
+    }
+
+    // Drop guard so down -v + image untag run even on assertion panic.
     let _guard = CleanupGuard {
         bin,
         env: &env_path,
         project: &project,
+        tagged_image: Some(test_image.clone()),
     };
 
     // 2. up
