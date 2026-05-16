@@ -244,6 +244,46 @@ mod tests {
     }
 
     #[test]
+    fn logs_no_service_with_tail_default() {
+        let flags = LogsFlags {
+            follow: false,
+            tail: Some("100".into()),
+            since: None,
+            timestamps: false,
+            no_color: false,
+        };
+        let cmd = fixture().logs(None, &flags);
+        let args = argv(&cmd);
+        let last_three = &args[args.len() - 3..];
+        assert_eq!(
+            last_three,
+            ["logs".to_string(), "--tail".to_string(), "100".to_string()]
+        );
+    }
+
+    #[test]
+    fn logs_with_service_and_follow_only() {
+        let flags = LogsFlags {
+            follow: true,
+            tail: None,
+            since: None,
+            timestamps: false,
+            no_color: false,
+        };
+        let cmd = fixture().logs(Some("remote-server"), &flags);
+        let args = argv(&cmd);
+        let last_three = &args[args.len() - 3..];
+        assert_eq!(
+            last_three,
+            [
+                "logs".to_string(),
+                "--follow".to_string(),
+                "remote-server".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn logs_with_service_and_flags_forwards_all() {
         let flags = LogsFlags {
             follow: true,
