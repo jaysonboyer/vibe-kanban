@@ -160,10 +160,9 @@ async fn main() {
 }
 
 async fn run_server() -> Result<(), VibeKanbanError> {
-    // Install rustls crypto provider before any TLS operations
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
+    // Install rustls crypto provider before any TLS operations (Once-gated,
+    // idempotent; safe when both server + MCP share the same process). D-09.
+    utils::rustls::install_default_provider();
 
     sentry_utils::init_once(SentrySource::Backend);
 

@@ -11334,6 +11334,7 @@ dependencies = [
  "open",
  "regex",
  "rust-embed",
+ "rustls",
  "sentry",
  "sentry-tracing",
  "serde",

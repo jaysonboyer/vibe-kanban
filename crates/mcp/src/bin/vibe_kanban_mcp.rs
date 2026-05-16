@@ -156,9 +156,9 @@ async fn resolve_base_url(log_prefix: &str) -> anyhow::Result<String> {
 }
 
 fn init_process_logging(log_prefix: &str, version: &str) {
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
+    // Idempotent shared install — same call lives in `crates/server/src/main.rs`.
+    // Safe when both binaries share a process (Tauri). D-09.
+    utils::rustls::install_default_provider();
 
     sentry_utils::init_once(SentrySource::Mcp);
 
