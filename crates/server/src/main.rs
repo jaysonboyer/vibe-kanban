@@ -29,6 +29,10 @@ pub enum VibeKanbanError {
     Deployment(#[from] DeploymentError),
     #[error(transparent)]
     Other(#[from] AnyhowError),
+    #[error(
+        "Port {port} is already in use. Set {env_var}=<n> to choose another, or stop the conflicting process."
+    )]
+    PortInUse { port: u16, env_var: &'static str },
     #[error(transparent)]
     Remote(#[from] remote_cli::error::RemoteCliError),
 }
@@ -53,6 +57,82 @@ enum Command {
 async fn run_subcommand(command: Command) -> Result<(), VibeKanbanError> {
     match command {
         Command::Remote(args) => remote_cli::run(args).await.map_err(VibeKanbanError::from),
+    }
+}
+
+/// Resolve `(host, backend_port, proxy_port)` from env vars with mode-aware
+/// defaults. Release builds get deterministic ports (8419/8420) so external
+/// consumers (sandbox, skills, MCP clients) can hardcode a canonical URL;
+/// debug builds keep the current behaviour (3000 + OS-assigned proxy) so
+/// `pnpm run dev` continues to work without env overrides. D-01, D-02, D-06,
+/// D-07, D-08.
+fn resolve_ports() -> Result<(String, u16, u16), VibeKanbanError> {
+    let backend_default: u16 = if cfg!(debug_assertions) { 3000 } else { 8419 };
+
+    let backend = std::env::var("BACKEND_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .ok()
+        .and_then(|s| {
+            // Strip ANSI escapes — defends against shell colour codes pasted
+            // into env vars (CONCERNS: "Port Parsing Loses Type Safety").
+            let cleaned = String::from_utf8(strip(s.as_bytes())).ok()?;
+            cleaned.trim().parse::<u16>().ok()
+        })
+        .unwrap_or_else(|| {
+            tracing::info!(
+                mode = if cfg!(debug_assertions) {
+                    "dev"
+                } else {
+                    "prod"
+                },
+                "No BACKEND_PORT/PORT set; using default {}",
+                backend_default
+            );
+            backend_default
+        });
+
+    let proxy = match std::env::var("PREVIEW_PROXY_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+    {
+        Some(p) => p,
+        None => {
+            if cfg!(debug_assertions) {
+                0
+            } else {
+                backend.checked_add(1).ok_or_else(|| {
+                    VibeKanbanError::Other(anyhow::anyhow!(
+                        "BACKEND_PORT {backend} too high to derive PREVIEW_PROXY_PORT={backend}+1; explicitly set PREVIEW_PROXY_PORT"
+                    ))
+                })?
+            }
+        }
+    };
+
+    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    Ok((host, backend, proxy))
+}
+
+/// Bind a TCP listener and convert `AddrInUse` into a typed error that names
+/// the env var the operator can set to choose another port. D-04 (port
+/// collision = hard error).
+async fn bind_or_die(
+    addr: String,
+    port: u16,
+    env_var: &'static str,
+) -> Result<tokio::net::TcpListener, VibeKanbanError> {
+    match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => Ok(listener),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::error!(
+                port,
+                env_var,
+                "{}",
+                VibeKanbanError::PortInUse { port, env_var }
+            );
+            Err(VibeKanbanError::PortInUse { port, env_var })
+        }
+        Err(e) => Err(VibeKanbanError::Io(e)),
     }
 }
 
@@ -142,31 +222,25 @@ async fn run_server() -> Result<(), VibeKanbanError> {
     tokio::spawn(async move {
         executors::executors::utils::preload_global_executor_options_cache().await;
     });
-    let port = std::env::var("BACKEND_PORT")
-        .or_else(|_| std::env::var("PORT"))
-        .ok()
-        .and_then(|s| {
-            // Remove any ANSI codes, then turn into String
-            let cleaned =
-                String::from_utf8(strip(s.as_bytes())).expect("UTF-8 after stripping ANSI");
-            cleaned.trim().parse::<u16>().ok()
-        })
-        .unwrap_or_else(|| {
-            tracing::info!("No PORT environment variable set, using default port 3000");
-            3000
-        });
+    let (host, port, proxy_port) = resolve_ports()?;
+    tracing::info!(
+        host = %host,
+        backend_port = port,
+        proxy_port,
+        "Resolved listener config"
+    );
 
-    let proxy_port = std::env::var("PREVIEW_PROXY_PORT")
-        .ok()
-        .and_then(|s| s.trim().parse::<u16>().ok())
-        .unwrap_or(0);
-
-    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-
-    let main_listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+    let main_listener = bind_or_die(format!("{host}:{port}"), port, "BACKEND_PORT").await?;
     let actual_main_port = main_listener.local_addr()?.port();
 
-    let proxy_listener = tokio::net::TcpListener::bind(format!("{host}:{proxy_port}")).await?;
+    // PREVIEW_PROXY_PORT=0 (dev default) means OS-assign — AddrInUse cannot fire
+    // there. The typed error only triggers for an explicit, taken port (prod).
+    let proxy_listener = bind_or_die(
+        format!("{host}:{proxy_port}"),
+        proxy_port,
+        "PREVIEW_PROXY_PORT",
+    )
+    .await?;
     let actual_proxy_port = proxy_listener.local_addr()?.port();
 
     if let Err(e) = write_port_file_with_proxy(actual_main_port, Some(actual_proxy_port)).await {
