@@ -1,5 +1,6 @@
 pub mod error;
 pub mod middleware;
+pub mod readiness;
 pub mod relay_pairing;
 pub mod remote_cli;
 pub mod routes;

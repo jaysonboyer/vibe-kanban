@@ -137,17 +137,22 @@ pub async fn start_with_bind(
     })
 }
 
-/// Initialize the deployment: create asset directory, run migrations, backfill data,
+/// Initialize the deployment: validate asset directory, run migrations, backfill data,
 /// and pre-warm caches. Shared between the standalone server and the Tauri app.
+///
+/// Drives the readiness state machine so /api/health can report which phase
+/// the process is in: Starting → MigratingDb → InitializingServices → Ready.
 pub async fn initialize_deployment(
     shutdown: CancellationToken,
 ) -> Result<DeploymentImpl, DeploymentError> {
-    // Create asset directory if it doesn't exist
-    if !asset_dir().exists() {
-        std::fs::create_dir_all(asset_dir()).map_err(|e| {
-            DeploymentError::Other(anyhow::anyhow!("Failed to create asset directory: {}", e))
-        })?;
-    }
+    utils::assets::validate_or_init_assets().map_err(|e| {
+        DeploymentError::Other(anyhow::anyhow!(
+            "Failed to validate/init assets directory: {}",
+            e
+        ))
+    })?;
+
+    crate::readiness::Phase::MigratingDb.set();
 
     // Copy old database to new location for safe downgrades
     let old_db = asset_dir().join("db.sqlite");
@@ -163,6 +168,9 @@ pub async fn initialize_deployment(
     }
 
     let deployment = DeploymentImpl::new(shutdown).await?;
+
+    crate::readiness::Phase::InitializingServices.set();
+
     migrate_legacy_attachment_directories(&deployment).await?;
     deployment.update_sentry_scope().await?;
     deployment
@@ -189,6 +197,7 @@ pub async fn initialize_deployment(
         executors::executors::utils::preload_global_executor_options_cache().await;
     });
 
+    crate::readiness::Phase::Ready.set();
     Ok(deployment)
 }
 

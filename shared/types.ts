@@ -4,6 +4,8 @@
 
 // If you are an AI, and you absolutely have to edit this file, please confirm with the user first.
 
+export type Phase = "starting" | "migrating-db" | "initializing-services" | "ready";
+
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
 export type Project = { id: string, name: string, default_agent_working_dir: string | null, remote_project_id: string | null, created_at: Date, updated_at: Date, };

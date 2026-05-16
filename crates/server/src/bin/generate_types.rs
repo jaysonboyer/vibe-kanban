@@ -11,6 +11,7 @@ fn generate_types_content() -> String {
 // If you are an AI, and you absolutely have to edit this file, please confirm with the user first.";
 
     let decls: Vec<String> = vec![
+        server::readiness::Phase::decl(),
         db::models::repo::Repo::decl(),
         db::models::project::Project::decl(),
         db::models::repo::UpdateRepo::decl(),
