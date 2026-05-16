@@ -479,10 +479,10 @@ mod tests {
                     }
                     j += 1;
                 }
-                if j > start {
-                    if let Ok(name) = std::str::from_utf8(&bytes[start..j]) {
-                        out.insert(name.to_string());
-                    }
+                if j > start
+                    && let Ok(name) = std::str::from_utf8(&bytes[start..j])
+                {
+                    out.insert(name.to_string());
                 }
                 i = j;
                 continue;

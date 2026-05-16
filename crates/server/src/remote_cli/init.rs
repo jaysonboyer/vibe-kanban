@@ -476,7 +476,7 @@ mod tests {
             Some(&"p455w0rd".to_string())
         );
         // Commented lines must NOT show up in the parsed map.
-        assert!(parsed.values.get("GITHUB_OAUTH_CLIENT_ID").is_none());
+        assert!(!parsed.values.contains_key("GITHUB_OAUTH_CLIENT_ID"));
     }
 
     #[test]
