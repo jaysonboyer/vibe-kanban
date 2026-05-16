@@ -243,7 +243,13 @@ async fn run_server() -> Result<(), VibeKanbanError> {
     .await?;
     let actual_proxy_port = proxy_listener.local_addr()?.port();
 
-    if let Err(e) = write_port_file_with_proxy(actual_main_port, Some(actual_proxy_port)).await {
+    // D-03 / VKSTART-03: prod no longer writes the port file (race vector for MCP
+    // and other consumers). Dev keeps it for `scripts/setup-dev-environment.js`
+    // back-compat and the MCP dev-mode fallback chain
+    // (see crates/mcp/src/bin/vibe_kanban_mcp.rs::resolve_base_url).
+    if cfg!(debug_assertions)
+        && let Err(e) = write_port_file_with_proxy(actual_main_port, Some(actual_proxy_port)).await
+    {
         tracing::warn!("Failed to write port file: {}", e);
     }
 

@@ -215,8 +215,19 @@ function checkForUpdates(): void {
 
 async function runMcp(args: string[]): Promise<void> {
   await extractAndRun("vibe-kanban-mcp", (bin) => {
+    // D-03 / VKSTART-05: inject VIBE_BACKEND_URL so the MCP subprocess never
+    // touches the port file. The Rust binary defaults to 127.0.0.1:8419 in
+    // prod when unset, but this path also runs in dev — making it explicit
+    // here means `npx vibe-kanban mcp` works identically in both modes and
+    // mirrors what `install-mcp` writes into user mcp.json files.
+    const backendPort = process.env.BACKEND_PORT || "8419";
     const proc = spawn(bin, buildMcpArgs(args), {
       stdio: "inherit",
+      env: {
+        ...process.env,
+        VIBE_BACKEND_URL:
+          process.env.VIBE_BACKEND_URL || `http://127.0.0.1:${backendPort}`,
+      },
     });
     proc.on("exit", (c) => process.exit(c || 0));
     proc.on("error", (e) => {
