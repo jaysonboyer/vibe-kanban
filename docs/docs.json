@@ -29,6 +29,7 @@
           "issue-management",
           "reviewing-code",
           "remote-access",
+          "remote-deployment",
           {
             "group": "Supported Coding Agents",
             "expanded": true,

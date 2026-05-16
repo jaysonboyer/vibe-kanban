@@ -4,6 +4,24 @@ The `remote` crate contains the hosted API and web app.
 
 ## Local Setup
 
+The recommended path is the `vibe-kanban remote` CLI, which bootstraps the
+env file, brings the stack up against healthchecks, and gives you `status`,
+`logs`, and `down` subcommands without raw `docker compose` invocations.
+
+```bash
+vibe-kanban remote init   # generate .env.remote
+vibe-kanban remote up     # bring the stack up to healthy
+```
+
+See [Remote deployment lifecycle](../../docs/remote-deployment.mdx) for the
+full CLI reference, flag tables, env-file search order, and troubleshooting.
+
+The remainder of this README documents the raw `docker compose` flow that
+the CLI wraps — useful when you need to customise compose behaviour beyond
+what the CLI exposes.
+
+### Env file shape
+
 Create `crates/remote/.env.remote`:
 
 ```env
@@ -40,7 +58,7 @@ Generate the JWT secret once:
 openssl rand -base64 48
 ```
 
-## Run
+## Advanced: raw docker compose
 
 From the repo root:
 

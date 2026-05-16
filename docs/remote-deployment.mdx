@@ -1,0 +1,280 @@
+---
+title: "Remote deployment lifecycle"
+description: "Bring up, monitor, and tear down VK's cloud-mode docker stack with vibe-kanban remote"
+---
+
+`vibe-kanban remote` is the lifecycle CLI for VK's cloud-mode docker stack —
+Postgres, ElectricSQL, and the remote server. Use it to start, stop, monitor,
+and configure the stack without writing raw `docker compose` invocations.
+
+## Prerequisites
+
+- **Docker Desktop** (macOS) or **Docker Engine** (Linux), with the v2 compose
+  plugin (`docker compose`, with a space — not the legacy `docker-compose`).
+- The `vibe-kanban` repository checked out at `~/workspace/vibe-kanban` (or set
+  `VIBE_KANBAN_REPO` to point at a different location).
+- The `vibe-kanban` binary on `PATH` (globally installed) or via
+  `npx vibe-kanban remote ...`.
+
+## Quickstart
+
+<Steps>
+  <Step title="Bootstrap your .env.remote">
+    On a fresh machine, generate the env file interactively:
+
+    ```bash
+    vibe-kanban remote init
+    ```
+
+    <Note>Choose **Self-host (email + password)** for local development. The
+    JWT secret is generated automatically with cryptographically secure
+    randomness — no need to run `openssl rand` yourself.</Note>
+  </Step>
+  <Step title="Bring up the stack">
+    ```bash
+    vibe-kanban remote up
+    ```
+
+    The first run builds the `remote-server` image, which can take 5–15
+    minutes. Subsequent runs use the cached image and start in seconds.
+
+    <Check>When the command exits 0, the stack is healthy and the UI is
+    reachable at http://localhost:3000.</Check>
+  </Step>
+  <Step title="Check status">
+    ```bash
+    vibe-kanban remote status
+    ```
+
+    Prints a table with one row per running service.
+  </Step>
+  <Step title="Stop the stack">
+    ```bash
+    vibe-kanban remote down
+    ```
+
+    Volumes are preserved by default so your database survives a restart.
+  </Step>
+</Steps>
+
+## Subcommands
+
+<AccordionGroup>
+  <Accordion title="up — bring up the stack">
+    Starts the default compose profile: `remote-db`, `electric`, and
+    `remote-server`. Waits until every service passes its healthcheck.
+
+    **Flags:**
+
+    | Flag | Purpose |
+    |------|---------|
+    | `--with-attachments` | Adds the `attachments` profile (Azurite) |
+    | `--with-relay` | Adds the `relay` profile (relay server) |
+    | `--env-file <path>` | Override the env file search order |
+    | `--build` | Force rebuild the `remote-server` image |
+    | `--no-build` | Fail if no cached image exists |
+    | `--build-timeout <secs>` | Kill switch for the build phase (default 600) |
+    | `--health-timeout <secs>` | Maximum wait for healthchecks (default 120) |
+    | `--no-wait` | Skip the wait phase; return as soon as containers start |
+  </Accordion>
+  <Accordion title="down — stop the stack">
+    Stops all containers in the project namespace. Preserves volumes by
+    default.
+
+    **Flags:**
+
+    | Flag | Purpose |
+    |------|---------|
+    | `-v` / `--volumes` | Remove named volumes (destructive) |
+    | `--env-file <path>` | Override the env file search order |
+
+    <Warning>`down -v` permanently deletes your Postgres data. Use plain
+    `down` if you want to restart later with the same state.</Warning>
+  </Accordion>
+  <Accordion title="status — show service health">
+    Prints a fixed-width table with columns SERVICE, STATE, HEALTH, PORTS.
+    Reports on every running service in the project namespace regardless of
+    which profile started it.
+
+    Empty output (`No services running`) means the stack is fully down.
+  </Accordion>
+  <Accordion title="logs — tail container logs">
+    Thin pass-through to `docker compose logs`. Tails all services when no
+    name is given; one service when specified.
+
+    **Flags:**
+
+    | Flag | Purpose |
+    |------|---------|
+    | `-f` / `--follow` | Stream new log lines |
+    | `--tail <n>` | Show last N lines (default 100) |
+    | `--since <duration>` | Filter by timestamp (e.g. `5m`, `1h`) |
+    | `--timestamps` | Include timestamps |
+    | `--no-color` | Disable ANSI colour codes |
+
+    Example:
+
+    ```bash
+    vibe-kanban remote logs remote-server -f --tail 50
+    ```
+  </Accordion>
+  <Accordion title="init — bootstrap .env.remote">
+    Generates a `.env.remote` file with a fresh JWT secret + the
+    authentication method you choose. Interactive by default; use
+    `--non-interactive` for CI or dotfile scripts.
+
+    **Flags (non-interactive mode):**
+
+    | Flag | Purpose |
+    |------|---------|
+    | `--non-interactive` | Disable prompts |
+    | `--auth-method <method>` | One of `self-host`, `github-oauth`, `google-oauth` |
+    | `--jwt-secret <base64>` | Override the auto-generated secret |
+    | `--self-host-email <addr>` | Required when auth-method is self-host |
+    | `--self-host-password <pw>` | Required when auth-method is self-host |
+    | `--github-client-id <id>` | Required for github-oauth |
+    | `--github-client-secret <s>` | Required for github-oauth |
+    | `--google-client-id <id>` | Required for google-oauth |
+    | `--google-client-secret <s>` | Required for google-oauth |
+    | `--force` | Overwrite an existing `.env.remote` (destructive) |
+    | `--merge` | Add missing keys without touching existing values |
+
+    <Warning>`--force` overwrites your existing `.env.remote` — back up
+    first. Interactive `--force` requires you to type `yes` to confirm; in
+    non-interactive mode the confirmation is skipped by design.</Warning>
+
+    The generated file is written with `0600` permissions on Unix so other
+    users on the same machine cannot read it.
+  </Accordion>
+</AccordionGroup>
+
+## Configuration
+
+### Env file location
+
+`vibe-kanban remote` looks for `.env.remote` in this order:
+
+1. `--env-file <path>` (explicit override)
+2. `${VIBE_KANBAN_REPO}/.env.remote` (when the env var is set)
+3. `${HOME}/workspace/vibe-kanban/.env.remote` (default)
+
+If none exist, the command exits with an error pointing at
+`vibe-kanban remote init`.
+
+### Required keys
+
+Exactly one key is required for the stack to boot:
+
+| Key | How to generate |
+|-----|-----------------|
+| `VIBEKANBAN_REMOTE_JWT_SECRET` | `openssl rand -base64 48` or run `vibe-kanban remote init` |
+
+If this key is missing, `remote up` exits non-zero **before** invoking docker.
+
+### Optional keys (warn on missing)
+
+These keys enable optional integrations. Missing values log a warning naming
+the disabled feature; the stack still starts:
+
+| Key | Disabled feature |
+|-----|------------------|
+| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth login |
+| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth login |
+| `SELF_HOST_LOCAL_AUTH_EMAIL` | Self-host email + password auth |
+| `LOOPS_EMAIL_API_KEY` | Email notifications |
+| `R2_ACCESS_KEY_ID` | R2 attachment storage |
+| `GITHUB_APP_ID` | GitHub App integration |
+| `STRIPE_SECRET_KEY` | Stripe billing |
+| `AZURE_STORAGE_CONNECTION_STRING` | Azure storage (attachments profile) |
+
+## Profiles
+
+The default `up` starts only the smallest viable stack. Opt in to extras with
+named flags:
+
+- `--with-attachments` enables the `attachments` profile, adding `azurite` +
+  `azurite-init` for local Azure-storage emulation.
+- `--with-relay` enables the `relay` profile, adding `relay-server`.
+
+Flags are composable:
+
+```bash
+vibe-kanban remote up --with-attachments --with-relay
+```
+
+## Ports
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 3000 | remote-server | UI + API |
+| 5433 | remote-db | Postgres (mapped from container 5432) |
+| 8082 | relay-server | Relay (only with `--with-relay`) |
+| 10000 | azurite | Azure storage emulator (only with `--with-attachments`) |
+
+The local-mode `vibe-kanban` binary uses port 8419 (see [Ports](/ports));
+these stacks do not conflict and may run simultaneously.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Docker is not installed or not on PATH">
+    Install Docker Desktop on macOS (https://docs.docker.com/get-docker/) or
+    Docker Engine on Linux (`sudo apt install docker-ce` or your distro's
+    equivalent). Make sure `docker version` runs successfully before
+    retrying.
+  </Accordion>
+  <Accordion title="The daemon is not running">
+    Start Docker Desktop on macOS, or `sudo systemctl start docker` on
+    Linux.
+  </Accordion>
+  <Accordion title="Port is already allocated (5433 or 3000)">
+    Another process is bound to one of the stack's ports. Find it:
+
+    ```bash
+    lsof -nP -iTCP -sTCP:LISTEN | grep -E '5433|3000'
+    ```
+
+    Stop the offending process (often a previous sandbox stack or a local
+    Postgres instance) and re-run `vibe-kanban remote up`.
+  </Accordion>
+  <Accordion title="The build takes forever">
+    First-time builds of `remote-server` take 5–15 minutes on a clean
+    machine (Rust release build + Node frontend). Watch the build output;
+    if a step appears stuck for several minutes that is normal. Subsequent
+    runs use the cached image and start in seconds.
+
+    Pass `--no-build` to fail fast if you expected a cached image.
+  </Accordion>
+  <Accordion title="My .env.remote is stale after a VK upgrade">
+    Run `vibe-kanban remote init --merge` to append new keys without
+    touching existing values.
+  </Accordion>
+  <Accordion title="CI: cold builds time out">
+    Pre-build the image in a dedicated CI step before invoking the
+    lifecycle test:
+
+    ```bash
+    docker compose --project-directory crates/remote --env-file .env.remote build
+    ```
+
+    Then the integration test can use `--no-build` and complete in well
+    under five minutes.
+  </Accordion>
+</AccordionGroup>
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Docker missing, daemon down, or compose returned non-zero |
+| 2 | Invalid CLI arguments |
+| 3 | Refused state (e.g., `.env.remote` already exists without `--force`/`--merge`) |
+| 4 | Env file not found |
+
+## Related
+
+- [Ports](/ports) — VK's port allocation across local and remote stacks
+- The legacy raw `docker compose` workflow remains in the
+  [remote crate README](https://github.com/BloopAI/vibe-kanban/blob/main/crates/remote/README.md)
+  under the "Advanced" section as a fallback for unusual configurations.
