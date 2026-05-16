@@ -96,3 +96,6 @@ vibe-kanban-cloud/
 *.ts.net.key
 Caddyfile
 Caddyfile.dev
+/.playwright-cli
+/.pnpm-store
+/data

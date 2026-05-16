@@ -82,13 +82,18 @@ pnpm i
 
 ### 7. Run the Build
 
+The build bakes `VITE_VK_SHARED_API_BASE` into the frontend bundle at build time
+— you can't change the target API URL at runtime. The default below points at
+the local docker `vk-remote-server` so the binary integrates with `sandbox vk`.
+Override `VK_SHARED_API_BASE` if you want a different target (e.g. `https://api.vibekanban.com` for the public Cloud).
+
 **If production build:**
 
 ```bash
-pnpm run build:npx
+VK_SHARED_API_BASE="${VK_SHARED_API_BASE:-http://localhost:3000}" pnpm run build:npx
 ```
 
-This runs `local-build.sh` which builds the frontend, compiles three Rust binaries with `--release`, and packages them into `npx-cli/dist/<platform>/`.
+This runs `local-build.sh` which builds the frontend, compiles three Rust binaries with `--release`, and packages them into `npx-cli/dist/<platform>/`. The patched `local-build.sh` respects the inherited `VK_SHARED_API_BASE` and sets `VITE_VK_SHARED_API_BASE` from it.
 
 **If dev build:**
 
@@ -111,10 +116,11 @@ mkdir -p "npx-cli/dist/$PLATFORM"
 (cd frontend && npm run build)
 
 # Build Rust binaries in debug mode (no --release)
-export VK_SHARED_API_BASE="https://api.vibekanban.com"
-export VITE_VK_SHARED_API_BASE="https://api.vibekanban.com"
+# Default to local docker vk-remote-server; override VK_SHARED_API_BASE for public Cloud.
+export VK_SHARED_API_BASE="${VK_SHARED_API_BASE:-http://localhost:3000}"
+export VITE_VK_SHARED_API_BASE="${VITE_VK_SHARED_API_BASE:-$VK_SHARED_API_BASE}"
 cargo build --bin server --manifest-path Cargo.toml
-cargo build --bin mcp_task_server --manifest-path Cargo.toml
+cargo build --bin vibe-kanban-mcp --manifest-path Cargo.toml
 cargo build --bin review --manifest-path Cargo.toml
 
 # Package into dist (same zip structure local-build.sh uses)
@@ -122,7 +128,7 @@ cp target/debug/server vibe-kanban
 zip -q vibe-kanban.zip vibe-kanban && rm vibe-kanban
 mv vibe-kanban.zip "npx-cli/dist/$PLATFORM/"
 
-cp target/debug/mcp_task_server vibe-kanban-mcp
+cp target/debug/vibe-kanban-mcp vibe-kanban-mcp
 zip -q vibe-kanban-mcp.zip vibe-kanban-mcp && rm vibe-kanban-mcp
 mv vibe-kanban-mcp.zip "npx-cli/dist/$PLATFORM/"
 
@@ -212,5 +218,5 @@ rm ~/.local/bin/vibe-kanban
 
 - The `npx-cli/dist/` directory must exist for LOCAL_DEV_MODE to activate. If you delete it, the global binary will try to download from R2 instead.
 - `VIBE_KANBAN_LOCAL=1` env var also forces LOCAL_DEV_MODE without needing the `dist/` directory.
-- The build sets `VK_SHARED_API_BASE=https://api.vibekanban.com` for remote features.
+- The build defaults `VK_SHARED_API_BASE=http://localhost:3000` (local docker `vk-remote-server` from `sandbox vk`). The frontend bakes this URL in at build time via `VITE_VK_SHARED_API_BASE`. To target the public Cloud instead, run `VK_SHARED_API_BASE=https://api.vibekanban.com pnpm run build:npx`.
 - Platform is auto-detected by `local-build.sh` (outputs to `npx-cli/dist/macos-arm64/` on Apple Silicon).
