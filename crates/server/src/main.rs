@@ -1,8 +1,10 @@
 use anyhow::{self, Error as AnyhowError};
 use axum::Router;
+use clap::{Parser, Subcommand};
 use deployment::{Deployment, DeploymentError};
 use server::{
-    DeploymentImpl, middleware::origin::validate_origin, routes, runtime::relay_registration,
+    DeploymentImpl, middleware::origin::validate_origin, remote_cli, routes,
+    runtime::relay_registration,
 };
 use services::services::container::ContainerService;
 use sqlx::Error as SqlxError;
@@ -27,10 +29,57 @@ pub enum VibeKanbanError {
     Deployment(#[from] DeploymentError),
     #[error(transparent)]
     Other(#[from] AnyhowError),
+    #[error(transparent)]
+    Remote(#[from] remote_cli::error::RemoteCliError),
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "vibe-kanban",
+    version,
+    about = "Vibe Kanban server (default) or subcommand"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Bring up, monitor, and tear down VK's cloud-mode docker stack (Phase 01.1, D-01).
+    Remote(remote_cli::args::RemoteArgs),
+}
+
+async fn run_subcommand(command: Command) -> Result<(), VibeKanbanError> {
+    match command {
+        Command::Remote(args) => remote_cli::run(args).await.map_err(VibeKanbanError::from),
+    }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), VibeKanbanError> {
+async fn main() {
+    let cli = Cli::parse();
+    if let Some(command) = cli.command {
+        let exit_code = match run_subcommand(command).await {
+            Ok(()) => 0,
+            Err(VibeKanbanError::Remote(e)) => {
+                eprintln!("{e}");
+                e.exit_code()
+            }
+            Err(other) => {
+                eprintln!("{other}");
+                1
+            }
+        };
+        std::process::exit(exit_code);
+    }
+    if let Err(e) = run_server().await {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run_server() -> Result<(), VibeKanbanError> {
     // Install rustls crypto provider before any TLS operations
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
