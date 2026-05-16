@@ -127,10 +127,7 @@ impl ComposeInvocation {
     pub fn images_for_remote_server(&self) -> Command {
         let mut cmd = Command::new("docker");
         let image = format!("{}-remote-server", self.project_name);
-        cmd.arg("images")
-            .arg(image)
-            .arg("--format")
-            .arg("{{.ID}}");
+        cmd.arg("images").arg(image).arg("--format").arg("{{.ID}}");
         cmd
     }
 }
