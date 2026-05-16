@@ -241,6 +241,19 @@ async function runReview(args: string[]): Promise<void> {
   });
 }
 
+async function runRemote(args: string[]): Promise<void> {
+  await extractAndRun("vibe-kanban", (bin) => {
+    const proc = spawn(bin, ["remote", ...args], { stdio: "inherit" });
+    proc.on("exit", (c) => process.exit(c || 0));
+    proc.on("error", (e) => {
+      console.error("Remote CLI error:", e.message);
+      process.exit(1);
+    });
+    process.on("SIGINT", () => proc.kill("SIGINT"));
+    process.on("SIGTERM", () => proc.kill("SIGTERM"));
+  });
+}
+
 async function runMain(desktopMode: boolean): Promise<void> {
   checkForUpdates();
 
@@ -329,6 +342,13 @@ async function main(): Promise<void> {
     .allowUnknownOptions()
     .action((args: string[]) => {
       runOrExit(runMcp(args));
+    });
+
+  cli
+    .command("remote [...args]", "Manage the VK cloud-mode docker stack")
+    .allowUnknownOptions()
+    .action((args: string[]) => {
+      runOrExit(runRemote(args));
     });
 
   cli.help();
