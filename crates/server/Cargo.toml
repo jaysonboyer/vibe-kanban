@@ -66,12 +66,20 @@ spake2 = { version = "0.5.0-pre.0", features = ["getrandom"] }
 sha2 = "0.10"
 ed25519-dalek = "2.2.0"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+dialoguer = "0.11"
+clap = { version = "4", features = ["derive", "env"] }
+urlencoding = "2"
 
 [build-dependencies]
 dotenv = "0.15"
 
 [dev-dependencies]
 tempfile = "3"
+# Opt in to plan 01-06's VK_TEST_FAIL_AFTER_DB injection seam so
+# tests/startup_integration.rs can exercise the scopeguard cleanup path.
+local-deployment = { path = "../local-deployment", features = ["test-fault-injection"] }
+reqwest = { workspace = true }
+tokio-util = { version = "0.7" }
 
 [features]
 default = []

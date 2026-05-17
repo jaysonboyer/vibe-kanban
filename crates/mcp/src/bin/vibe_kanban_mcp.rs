@@ -97,6 +97,19 @@ where
     Ok(LaunchConfig { mode })
 }
 
+/// Resolve the VK backend URL the MCP server should call.
+///
+/// Preference order:
+/// 1. `VIBE_BACKEND_URL` env var (D-03 — what `cli.ts` injects and what
+///    `install-mcp` writes into user mcp.json files).
+/// 2. URL constructed from `{MCP_HOST|HOST}` and `{MCP_PORT|BACKEND_PORT|PORT}`
+///    if any port env var is set.
+/// 3. Release build: fixed `http://127.0.0.1:8419` — matches D-01 prod default
+///    in `crates/server/src/main.rs::resolve_ports()`.
+/// 4. Debug build only: read the port file at
+///    `${TMPDIR}/vibe-kanban/vibe-kanban.port`. Back-compat for
+///    `scripts/setup-dev-environment.js` (prod no longer writes the file —
+///    see plan 01-03 / VKSTART-03).
 async fn resolve_base_url(log_prefix: &str) -> anyhow::Result<String> {
     if let Ok(url) = std::env::var("VIBE_BACKEND_URL") {
         tracing::info!(
@@ -111,32 +124,41 @@ async fn resolve_base_url(log_prefix: &str) -> anyhow::Result<String> {
         .or_else(|_| std::env::var("HOST"))
         .unwrap_or_else(|_| "127.0.0.1".to_string());
 
-    let port = match std::env::var(PORT_ENV)
+    let port_from_env: Option<u16> = std::env::var(PORT_ENV)
         .or_else(|_| std::env::var("BACKEND_PORT"))
         .or_else(|_| std::env::var("PORT"))
-    {
-        Ok(port_str) => {
-            tracing::info!("[{}] Using port from environment: {}", log_prefix, port_str);
-            port_str
-                .parse::<u16>()
-                .map_err(|error| anyhow::anyhow!("Invalid port value '{}': {}", port_str, error))?
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok());
+
+    let port = match port_from_env {
+        Some(p) => {
+            tracing::info!("[{}] Using port from environment: {}", log_prefix, p);
+            p
         }
-        Err(_) => {
-            let port = read_port_file("vibe-kanban").await?;
-            tracing::info!("[{}] Using port from port file: {}", log_prefix, port);
-            port
+        None => {
+            if cfg!(debug_assertions) {
+                let p = read_port_file("vibe-kanban").await?;
+                tracing::info!("[{}] (dev) Using port from port file: {}", log_prefix, p);
+                p
+            } else {
+                tracing::info!(
+                    "[{}] No VIBE_BACKEND_URL or BACKEND_PORT set; using prod default 8419",
+                    log_prefix
+                );
+                8419
+            }
         }
     };
 
     let url = format!("http://{}:{}", host, port);
-    tracing::info!("[{}] Using backend URL: {}", log_prefix, url);
+    tracing::info!("[{}] Resolved backend URL: {}", log_prefix, url);
     Ok(url)
 }
 
 fn init_process_logging(log_prefix: &str, version: &str) {
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
+    // Idempotent shared install — same call lives in `crates/server/src/main.rs`.
+    // Safe when both binaries share a process (Tauri). D-09.
+    utils::rustls::install_default_provider();
 
     sentry_utils::init_once(SentrySource::Mcp);
 

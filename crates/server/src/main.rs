@@ -1,8 +1,10 @@
 use anyhow::{self, Error as AnyhowError};
 use axum::Router;
+use clap::{Parser, Subcommand};
 use deployment::{Deployment, DeploymentError};
 use server::{
-    DeploymentImpl, middleware::origin::validate_origin, routes, runtime::relay_registration,
+    DeploymentImpl, middleware::origin::validate_origin, remote_cli, routes,
+    runtime::relay_registration,
 };
 use services::services::container::ContainerService;
 use sqlx::Error as SqlxError;
@@ -12,7 +14,6 @@ use tokio_util::sync::CancellationToken;
 use tower_http::validate_request::ValidateRequestHeaderLayer;
 use tracing_subscriber::{EnvFilter, prelude::*};
 use utils::{
-    assets::asset_dir,
     port_file::write_port_file_with_proxy,
     sentry::{self as sentry_utils, SentrySource, sentry_layer},
 };
@@ -27,14 +28,242 @@ pub enum VibeKanbanError {
     Deployment(#[from] DeploymentError),
     #[error(transparent)]
     Other(#[from] AnyhowError),
+    #[error(
+        "Port {port} is already in use. Set {env_var}=<n> to choose another, or stop the conflicting process."
+    )]
+    PortInUse { port: u16, env_var: &'static str },
+    #[error(transparent)]
+    Remote(#[from] remote_cli::error::RemoteCliError),
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "vibe-kanban",
+    version,
+    about = "Vibe Kanban server (default) or subcommand"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Bring up, monitor, and tear down VK's cloud-mode docker stack (Phase 01.1, D-01).
+    Remote(remote_cli::args::RemoteArgs),
+    /// Export workspace state as JSON or dotenv (D-09, D-15).
+    Export {
+        #[command(subcommand)]
+        action: ExportAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ExportAction {
+    /// Export a workspace by UUID or by --path (container_ref).
+    Workspace {
+        /// Workspace UUID (positional).
+        uuid: Option<String>,
+        /// Path to a directory inside the workspace (alternative to UUID).
+        #[arg(long)]
+        path: Option<String>,
+        /// Emit only KEY=VALUE lines from metadata (dotenv format) instead of JSON.
+        #[arg(long)]
+        env: bool,
+    },
+}
+
+async fn run_subcommand(command: Command) -> Result<(), VibeKanbanError> {
+    match command {
+        Command::Remote(args) => remote_cli::run(args).await.map_err(VibeKanbanError::from),
+        Command::Export { action } => match action {
+            ExportAction::Workspace { uuid, path, env } => {
+                export_workspace_cli(uuid, path, env).await
+            }
+        },
+    }
+}
+
+/// Loopback CLI for the `/api/export/workspace` route (D-09, D-15). Resolves
+/// the running server's URL from BACKEND_PORT (default 8419 prod / 3000 debug
+/// to mirror `resolve_ports`), issues a single GET, and emits either
+/// pretty-printed JSON (default) or dotenv-style `KEY=VALUE` lines (`--env`).
+///
+/// Exit codes (D-15):
+///   0 — success
+///   1 — server unreachable / non-2xx (except 404)
+///   2 — caller-side argv error (handled by `process::exit(2)` in the match)
+///   4 — workspace not found (HTTP 404)
+async fn export_workspace_cli(
+    uuid: Option<String>,
+    path: Option<String>,
+    env_mode: bool,
+) -> Result<(), VibeKanbanError> {
+    let backend_port = std::env::var("BACKEND_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(if cfg!(debug_assertions) { 3000 } else { 8419 });
+    let base = format!("http://127.0.0.1:{}", backend_port);
+
+    let url = match (uuid, path) {
+        (Some(id), None) => format!("{base}/api/export/workspace/{id}"),
+        (None, Some(p)) => {
+            let canonical = std::fs::canonicalize(&p).map_err(|e| {
+                VibeKanbanError::Other(anyhow::anyhow!("Cannot canonicalize path {}: {}", p, e))
+            })?;
+            let encoded = urlencoding::encode(&canonical.to_string_lossy()).into_owned();
+            format!("{base}/api/export/workspace?container_ref={}", encoded)
+        }
+        (Some(_), Some(_)) => {
+            eprintln!("Provide either a UUID positional OR --path, not both.");
+            std::process::exit(2);
+        }
+        (None, None) => {
+            eprintln!("Provide a workspace UUID (positional) OR --path <dir>.");
+            std::process::exit(2);
+        }
+    };
+
+    let resp = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Server unreachable at {base}. Is `vibe-kanban` running?\n  ({e})");
+            std::process::exit(1);
+        }
+    };
+
+    if resp.status().as_u16() == 404 {
+        eprintln!("Workspace not found.");
+        std::process::exit(4);
+    }
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        eprintln!("Server returned {}: {}", status, body);
+        std::process::exit(1);
+    }
+
+    let payload: services::services::export::ExportPayload = resp.json().await.map_err(|e| {
+        VibeKanbanError::Other(anyhow::anyhow!("Failed to parse export payload: {}", e))
+    })?;
+
+    if env_mode {
+        for (k, v) in &payload.metadata {
+            println!("{}={}", k, v);
+        }
+    } else {
+        let json = serde_json::to_string_pretty(&payload).map_err(|e| {
+            VibeKanbanError::Other(anyhow::anyhow!("Failed to serialize payload: {}", e))
+        })?;
+        println!("{}", json);
+    }
+
+    Ok(())
+}
+
+/// Resolve `(host, backend_port, proxy_port)` from env vars with mode-aware
+/// defaults. Release builds get deterministic ports (8419/8420) so external
+/// consumers (sandbox, skills, MCP clients) can hardcode a canonical URL;
+/// debug builds keep the current behaviour (3000 + OS-assigned proxy) so
+/// `pnpm run dev` continues to work without env overrides. D-01, D-02, D-06,
+/// D-07, D-08.
+fn resolve_ports() -> Result<(String, u16, u16), VibeKanbanError> {
+    let backend_default: u16 = if cfg!(debug_assertions) { 3000 } else { 8419 };
+
+    let backend = std::env::var("BACKEND_PORT")
+        .or_else(|_| std::env::var("PORT"))
+        .ok()
+        .and_then(|s| {
+            // Strip ANSI escapes — defends against shell colour codes pasted
+            // into env vars (CONCERNS: "Port Parsing Loses Type Safety").
+            let cleaned = String::from_utf8(strip(s.as_bytes())).ok()?;
+            cleaned.trim().parse::<u16>().ok()
+        })
+        .unwrap_or_else(|| {
+            tracing::info!(
+                mode = if cfg!(debug_assertions) {
+                    "dev"
+                } else {
+                    "prod"
+                },
+                "No BACKEND_PORT/PORT set; using default {}",
+                backend_default
+            );
+            backend_default
+        });
+
+    let proxy = match std::env::var("PREVIEW_PROXY_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+    {
+        Some(p) => p,
+        None => {
+            if cfg!(debug_assertions) {
+                0
+            } else {
+                backend.checked_add(1).ok_or_else(|| {
+                    VibeKanbanError::Other(anyhow::anyhow!(
+                        "BACKEND_PORT {backend} too high to derive PREVIEW_PROXY_PORT={backend}+1; explicitly set PREVIEW_PROXY_PORT"
+                    ))
+                })?
+            }
+        }
+    };
+
+    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    Ok((host, backend, proxy))
+}
+
+/// Bind a TCP listener and convert `AddrInUse` into a typed error that names
+/// the env var the operator can set to choose another port. D-04 (port
+/// collision = hard error).
+async fn bind_or_die(
+    addr: String,
+    port: u16,
+    env_var: &'static str,
+) -> Result<tokio::net::TcpListener, VibeKanbanError> {
+    match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => Ok(listener),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::error!(
+                port,
+                env_var,
+                "{}",
+                VibeKanbanError::PortInUse { port, env_var }
+            );
+            Err(VibeKanbanError::PortInUse { port, env_var })
+        }
+        Err(e) => Err(VibeKanbanError::Io(e)),
+    }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), VibeKanbanError> {
-    // Install rustls crypto provider before any TLS operations
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install rustls crypto provider");
+async fn main() {
+    let cli = Cli::parse();
+    if let Some(command) = cli.command {
+        let exit_code = match run_subcommand(command).await {
+            Ok(()) => 0,
+            Err(VibeKanbanError::Remote(e)) => {
+                eprintln!("{e}");
+                e.exit_code()
+            }
+            Err(other) => {
+                eprintln!("{other}");
+                1
+            }
+        };
+        std::process::exit(exit_code);
+    }
+    if let Err(e) = run_server().await {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run_server() -> Result<(), VibeKanbanError> {
+    // Install rustls crypto provider before any TLS operations (Once-gated,
+    // idempotent; safe when both server + MCP share the same process). D-09.
+    utils::rustls::install_default_provider();
 
     sentry_utils::init_once(SentrySource::Backend);
 
@@ -49,78 +278,41 @@ async fn main() -> Result<(), VibeKanbanError> {
         .with(sentry_layer())
         .init();
 
-    // Create asset directory if it doesn't exist
-    if !asset_dir().exists() {
-        std::fs::create_dir_all(asset_dir())?;
-    }
-
-    // Copy old database to new location for safe downgrades
-    let old_db = asset_dir().join("db.sqlite");
-    let new_db = asset_dir().join("db.v2.sqlite");
-    if !new_db.exists() && old_db.exists() {
-        tracing::info!(
-            "Copying database to new location: {:?} -> {:?}",
-            old_db,
-            new_db
-        );
-        std::fs::copy(&old_db, &new_db).expect("Failed to copy database file");
-        tracing::info!("Database copy complete");
-    }
-
     let shutdown_token = CancellationToken::new();
 
-    let deployment = DeploymentImpl::new(shutdown_token.clone()).await?;
-    deployment.update_sentry_scope().await?;
-    deployment
-        .container()
-        .cleanup_orphan_executions()
-        .await
-        .map_err(DeploymentError::from)?;
-    deployment
-        .container()
-        .backfill_before_head_commits()
-        .await
-        .map_err(DeploymentError::from)?;
-    deployment
-        .container()
-        .backfill_repo_names()
-        .await
-        .map_err(DeploymentError::from)?;
-    deployment
-        .track_if_analytics_allowed("session_start", serde_json::json!({}))
-        .await;
-    // Preload global executor options cache for all executors with DEFAULT presets
-    tokio::spawn(async move {
-        executors::executors::utils::preload_global_executor_options_cache().await;
-    });
-    let port = std::env::var("BACKEND_PORT")
-        .or_else(|_| std::env::var("PORT"))
-        .ok()
-        .and_then(|s| {
-            // Remove any ANSI codes, then turn into String
-            let cleaned =
-                String::from_utf8(strip(s.as_bytes())).expect("UTF-8 after stripping ANSI");
-            cleaned.trim().parse::<u16>().ok()
-        })
-        .unwrap_or_else(|| {
-            tracing::info!("No PORT environment variable set, using default port 3000");
-            3000
-        });
+    // Single startup orchestrator — drives Phase::* (visible via /api/health),
+    // validates assets, runs DB copy + migrations, builds the deployment, and
+    // pre-warms caches. Shared with the Tauri / test seam in startup.rs.
+    let deployment = server::startup::initialize_deployment(shutdown_token.clone()).await?;
 
-    let proxy_port = std::env::var("PREVIEW_PROXY_PORT")
-        .ok()
-        .and_then(|s| s.trim().parse::<u16>().ok())
-        .unwrap_or(0);
+    let (host, port, proxy_port) = resolve_ports()?;
+    tracing::info!(
+        host = %host,
+        backend_port = port,
+        proxy_port,
+        "Resolved listener config"
+    );
 
-    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-
-    let main_listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+    let main_listener = bind_or_die(format!("{host}:{port}"), port, "BACKEND_PORT").await?;
     let actual_main_port = main_listener.local_addr()?.port();
 
-    let proxy_listener = tokio::net::TcpListener::bind(format!("{host}:{proxy_port}")).await?;
+    // PREVIEW_PROXY_PORT=0 (dev default) means OS-assign — AddrInUse cannot fire
+    // there. The typed error only triggers for an explicit, taken port (prod).
+    let proxy_listener = bind_or_die(
+        format!("{host}:{proxy_port}"),
+        proxy_port,
+        "PREVIEW_PROXY_PORT",
+    )
+    .await?;
     let actual_proxy_port = proxy_listener.local_addr()?.port();
 
-    if let Err(e) = write_port_file_with_proxy(actual_main_port, Some(actual_proxy_port)).await {
+    // D-03 / VKSTART-03: prod no longer writes the port file (race vector for MCP
+    // and other consumers). Dev keeps it for `scripts/setup-dev-environment.js`
+    // back-compat and the MCP dev-mode fallback chain
+    // (see crates/mcp/src/bin/vibe_kanban_mcp.rs::resolve_base_url).
+    if cfg!(debug_assertions)
+        && let Err(e) = write_port_file_with_proxy(actual_main_port, Some(actual_proxy_port)).await
+    {
         tracing::warn!("Failed to write port file: {}", e);
     }
 
@@ -130,14 +322,22 @@ async fn main() -> Result<(), VibeKanbanError> {
         actual_proxy_port
     );
 
-    deployment
+    if let Err(_e) = deployment
         .client_info()
         .set_server_addr(main_listener.local_addr()?)
-        .expect("client server address already set");
-    deployment
+    {
+        tracing::warn!(
+            "client_info.set_server_addr called twice in the same process; ignoring (benign during re-init)"
+        );
+    }
+    if let Err(_e) = deployment
         .client_info()
         .set_preview_proxy_port(actual_proxy_port)
-        .expect("client preview proxy port already set");
+    {
+        tracing::warn!(
+            "client_info.set_preview_proxy_port called twice in the same process; ignoring (benign during re-init)"
+        );
+    }
 
     let app_router = routes::router(deployment.clone());
 

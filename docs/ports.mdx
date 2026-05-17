@@ -1,0 +1,42 @@
+---
+title: "Port allocation"
+description: "Where vibe-kanban binds in production and dev, and how to override"
+sidebarTitle: "Ports"
+---
+
+Production builds of `vibe-kanban` bind to **deterministic ports** so external tools (MCP clients, scripts, sandbox tooling) can talk to the server without re-implementing port discovery.
+
+## Production defaults
+
+| Service | Port | Override env var | Notes |
+|---------|------|------------------|-------|
+| Backend API | `8419` | `BACKEND_PORT` | The canonical API base URL is `http://127.0.0.1:8419`. |
+| Preview proxy | `8420` | `PREVIEW_PROXY_PORT` | Defaults to `BACKEND_PORT + 1`. Set explicitly to decouple. |
+| MCP server | (no TCP port) | `VIBE_BACKEND_URL` | Uses stdio transport. Discovers the backend via `VIBE_BACKEND_URL` (defaults to `http://127.0.0.1:8419`). |
+| Bind host | `127.0.0.1` | `HOST` | Localhost-only by default. |
+
+<Warning>
+`vibe-kanban` does not auto-shift ports if `8419` or `8420` is in use. The process exits non-zero with an error message naming the conflicting env var. Free the port or override explicitly.
+</Warning>
+
+## Development mode
+
+`pnpm run dev` keeps the existing free-port scan starting at `3000`, written to `.dev-ports.json` by `scripts/setup-dev-environment.js`. This lets a dev session coexist with an installed `vibe-kanban` global command using `8419`.
+
+The mode switch is the build profile: release builds use deterministic ports, debug builds keep auto-scan. There is no runtime mode flag.
+
+## Setting HOST
+
+The server binds to `127.0.0.1` by default. Setting `HOST=0.0.0.0` exposes the API to the network — including the `/api/export/workspace/...` endpoints which return workspace + task data. Only do this on trusted networks.
+
+## Overriding via env
+
+```bash
+BACKEND_PORT=9000 PREVIEW_PROXY_PORT=9001 vibe-kanban
+```
+
+The env vars always win regardless of build mode.
+
+## See also
+
+- [Remote deployment lifecycle](/remote-deployment) — cloud-mode docker stack (Postgres on `5433`, remote server on `3000`).

@@ -1,0 +1,116 @@
+---
+title: "Export API"
+description: "Stable HTTP + CLI interface for exporting workspace state"
+sidebarTitle: "Export API"
+---
+
+`vibe-kanban` exposes a workspace export contract on the loopback HTTP API. The CLI subcommand `vibe-kanban export workspace ...` is a thin wrapper over the same endpoint.
+
+## Schema
+
+Schema version: `vk-export/v1`.
+
+```json
+{
+  "$schema": "vk-export/v1",
+  "workspace": {
+    "id": "uuid",
+    "name": "string | null",
+    "container_ref": "string | null",
+    "archived": false
+  },
+  "task": {
+    "id": "uuid",
+    "title": "string",
+    "description": "string | null",
+    "description_source": "local | remote | null"
+  },
+  "metadata": {
+    "KEY1": "value1",
+    "KEY2": "value2"
+  }
+}
+```
+
+- `task` is `null` if the workspace has no linked task.
+- `description_source` is `local` when `task.description` is non-empty locally; `remote` when the description was fetched transparently from the linked remote issue; `null` when neither is available (the export still returns 200 OK).
+- `metadata` is the dict parsed from the first `` ```env `` or `` ```workspace `` fenced code block in `task.description`. Empty `{}` if no fenced block.
+
+## HTTP
+
+| URL | Returns |
+|-----|---------|
+| `GET /api/export/workspace/{uuid}` | `200` + payload on success; `404` if workspace not found. |
+| `GET /api/export/workspace?container_ref={path}` | Same. Path resolution is deepest-match-wins. |
+
+Both endpoints return the **raw payload** above — they do not wrap it in the standard `ApiResponse<T>` envelope.
+
+## CLI
+
+```bash
+# Pretty-printed JSON to stdout
+vibe-kanban export workspace <uuid>
+
+# KEY=VALUE dotenv lines from metadata only
+vibe-kanban export workspace <uuid> --env
+
+# Lookup by path (deepest-match container_ref)
+vibe-kanban export workspace --path .
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Server unreachable (start with `vibe-kanban` first) |
+| `2` | Invalid CLI args |
+| `4` | Workspace not found |
+
+The server is not auto-started by the CLI. Run `vibe-kanban` first in another terminal.
+
+## Schema versioning
+
+The `$schema` field declares the payload version. Breaking changes will ship as a new endpoint path (`/api/export/v2/workspace/...`) with a bumped `$schema` value. `vk-export/v1` is supported for at least one deprecation window.
+
+## Driving sandbox inputs
+
+The `developer-sandbox` CLI (`sandbox init-workspace`) takes its config as
+generic CLI flags / env vars / config file (see its
+[migration guide](https://github.com/trustradius/developer-sandbox/blob/main/docs/migration-from-vk-coupling.md)).
+The export contract above is the canonical glue — VK emits the dotenv form,
+sandbox reads it. Recipes:
+
+### One-shot dotenv
+
+```bash
+# Inside the workspace dir
+vibe-kanban export workspace --path . --env > .sandbox/workspace.env
+set -a; source .sandbox/workspace.env; set +a
+sandbox init-workspace
+```
+
+`--env` emits only the keys parsed from the task description's ` ```env `
+block — `FEATURE=...`, `SERVICES=...`, `JIRA_ID=...`, etc. — so the sourced
+environment lines up exactly with sandbox's `SANDBOX_*` resolution chain.
+
+### Committable JSON config
+
+```bash
+vibe-kanban export workspace --path . | \
+    jq '{feature: .metadata.FEATURE, services: .metadata.SERVICES, jira_id: .metadata.JIRA_ID}' \
+    > .sandbox/workspace.json
+sandbox init-workspace
+```
+
+Sandbox's `_resolve_inputs` reads
+`<workspace>/.sandbox/workspace.json` automatically.
+
+### Soft hook
+
+When `vibe-kanban` is on the developer's PATH, `sandbox up` and
+`sandbox down` invoke `vibe-kanban remote up` and `vibe-kanban remote
+down` automatically (opt out with `--no-vk` or
+`SANDBOX_VK_AUTOSTART=0`). No glue script needed for the lifecycle —
+only the workspace-input glue above when you want VK metadata to
+populate `FEATURE`/`SERVICES`/etc.

@@ -1,0 +1,50 @@
+---
+title: "MCP client configuration"
+description: "How to wire vibe-kanban into Claude Code, Cursor, or other MCP clients"
+sidebarTitle: "MCP clients"
+---
+
+The `vibe-kanban-mcp` binary speaks MCP over stdio. To connect a client, register the binary in the client's MCP config.
+
+## Automated install
+
+The simplest path is `vibe-kanban install-mcp`:
+
+```bash
+# Claude Code (writes to ~/.claude/mcp.json)
+vibe-kanban install-mcp claude
+
+# Cursor (writes to ~/.cursor/mcp.json)
+vibe-kanban install-mcp cursor
+```
+
+The command idempotently merges a `mcpServers["vibe-kanban"]` entry into the existing config. Other keys are preserved. If the existing config is not valid JSON, the command refuses to write (exit code 3) — fix or back up the file manually first.
+
+## Hand-edited snippet
+
+If you maintain your MCP config by hand:
+
+```json
+{
+  "mcpServers": {
+    "vibe-kanban": {
+      "command": "npx",
+      "args": ["-y", "vibe-kanban", "mcp"],
+      "env": {
+        "VIBE_BACKEND_URL": "http://127.0.0.1:8419"
+      }
+    }
+  }
+}
+```
+
+## Environment variables
+
+`vibe-kanban-mcp` resolves the backend URL in this order:
+
+1. `VIBE_BACKEND_URL` — preferred. Set by `vibe-kanban install-mcp` and by `npx vibe-kanban mcp`.
+2. `MCP_PORT` / `BACKEND_PORT` / `PORT` env vars (constructed against `HOST`).
+3. **Release builds**: fixed default `http://127.0.0.1:8419`.
+4. **Debug builds**: read the dev-mode port file.
+
+External clients that spawn the MCP binary directly (Claude Code, Cursor) inherit your shell environment. If you do not set `VIBE_BACKEND_URL`, the binary still works in release builds — it falls back to `8419` (the canonical production port).
