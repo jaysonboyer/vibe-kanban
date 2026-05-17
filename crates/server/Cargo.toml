@@ -75,6 +75,11 @@ dotenv = "0.15"
 
 [dev-dependencies]
 tempfile = "3"
+# Opt in to plan 01-06's VK_TEST_FAIL_AFTER_DB injection seam so
+# tests/startup_integration.rs can exercise the scopeguard cleanup path.
+local-deployment = { path = "../local-deployment", features = ["test-fault-injection"] }
+reqwest = { workspace = true }
+tokio-util = { version = "0.7" }
 
 [features]
 default = []

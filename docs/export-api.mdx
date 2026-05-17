@@ -1,0 +1,74 @@
+---
+title: "Export API"
+description: "Stable HTTP + CLI interface for exporting workspace state"
+sidebarTitle: "Export API"
+---
+
+`vibe-kanban` exposes a workspace export contract on the loopback HTTP API. The CLI subcommand `vibe-kanban export workspace ...` is a thin wrapper over the same endpoint.
+
+## Schema
+
+Schema version: `vk-export/v1`.
+
+```json
+{
+  "$schema": "vk-export/v1",
+  "workspace": {
+    "id": "uuid",
+    "name": "string | null",
+    "container_ref": "string | null",
+    "archived": false
+  },
+  "task": {
+    "id": "uuid",
+    "title": "string",
+    "description": "string | null",
+    "description_source": "local | remote | null"
+  },
+  "metadata": {
+    "KEY1": "value1",
+    "KEY2": "value2"
+  }
+}
+```
+
+- `task` is `null` if the workspace has no linked task.
+- `description_source` is `local` when `task.description` is non-empty locally; `remote` when the description was fetched transparently from the linked remote issue; `null` when neither is available (the export still returns 200 OK).
+- `metadata` is the dict parsed from the first `` ```env `` or `` ```workspace `` fenced code block in `task.description`. Empty `{}` if no fenced block.
+
+## HTTP
+
+| URL | Returns |
+|-----|---------|
+| `GET /api/export/workspace/{uuid}` | `200` + payload on success; `404` if workspace not found. |
+| `GET /api/export/workspace?container_ref={path}` | Same. Path resolution is deepest-match-wins. |
+
+Both endpoints return the **raw payload** above — they do not wrap it in the standard `ApiResponse<T>` envelope.
+
+## CLI
+
+```bash
+# Pretty-printed JSON to stdout
+vibe-kanban export workspace <uuid>
+
+# KEY=VALUE dotenv lines from metadata only
+vibe-kanban export workspace <uuid> --env
+
+# Lookup by path (deepest-match container_ref)
+vibe-kanban export workspace --path .
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Server unreachable (start with `vibe-kanban` first) |
+| `2` | Invalid CLI args |
+| `4` | Workspace not found |
+
+The server is not auto-started by the CLI. Run `vibe-kanban` first in another terminal.
+
+## Schema versioning
+
+The `$schema` field declares the payload version. Breaking changes will ship as a new endpoint path (`/api/export/v2/workspace/...`) with a bumped `$schema` value. `vk-export/v1` is supported for at least one deprecation window.

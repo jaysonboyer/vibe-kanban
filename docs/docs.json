@@ -30,6 +30,9 @@
           "reviewing-code",
           "remote-access",
           "remote-deployment",
+          "ports",
+          "export-api",
+          "mcp-clients",
           {
             "group": "Supported Coding Agents",
             "expanded": true,
