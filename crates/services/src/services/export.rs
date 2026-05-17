@@ -13,7 +13,7 @@ use db::models::{
 };
 use indexmap::IndexMap;
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use thiserror::Error;
 use ts_rs::TS;
@@ -33,7 +33,7 @@ pub enum ExportError {
     Workspace(#[from] WorkspaceError),
 }
 
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ExportPayload {
     #[serde(rename = "$schema")]
@@ -47,7 +47,7 @@ pub struct ExportPayload {
     pub metadata: IndexMap<String, String>,
 }
 
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ExportWorkspace {
     pub id: Uuid,
@@ -56,7 +56,7 @@ pub struct ExportWorkspace {
     pub archived: bool,
 }
 
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ExportTask {
     pub id: Uuid,
@@ -65,7 +65,7 @@ pub struct ExportTask {
     pub description_source: Option<DescriptionSource>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export)]
 pub enum DescriptionSource {

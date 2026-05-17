@@ -1,6 +1,7 @@
 import { execSync, spawn } from "child_process";
 import path from "path";
-import fs from "fs";
+import fs, { promises as fsp } from "fs";
+import os from "os";
 import { cac } from "cac";
 import {
   ensureBinary,
@@ -265,6 +266,89 @@ async function runRemote(args: string[]): Promise<void> {
   });
 }
 
+async function runExport(args: string[]): Promise<void> {
+  await extractAndRun("vibe-kanban", (bin) => {
+    const proc = spawn(bin, ["export", ...args], { stdio: "inherit" });
+    proc.on("exit", (c) => process.exit(c || 0));
+    proc.on("error", (e) => {
+      console.error("Export error:", e.message);
+      process.exit(1);
+    });
+    process.on("SIGINT", () => proc.kill("SIGINT"));
+    process.on("SIGTERM", () => proc.kill("SIGTERM"));
+  });
+}
+
+// ---------- install-mcp (D-19, VKAPI-03) ----------
+
+const MCP_CLIENTS = {
+  claude: path.join(os.homedir(), ".claude", "mcp.json"),
+  cursor: path.join(os.homedir(), ".cursor", "mcp.json"),
+} as const;
+
+type McpClient = keyof typeof MCP_CLIENTS;
+
+async function installMcp(client: string): Promise<void> {
+  if (!(client in MCP_CLIENTS)) {
+    console.error(
+      `Unknown client "${client}". Supported: ${Object.keys(MCP_CLIENTS).join(", ")}`,
+    );
+    process.exit(2);
+  }
+  const target = MCP_CLIENTS[client as McpClient];
+
+  // Read existing config. Missing file → empty config. Malformed JSON → refuse.
+  let existingRaw = "";
+  try {
+    existingRaw = await fsp.readFile(target, "utf8");
+  } catch (e: unknown) {
+    const code = (e as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== "ENOENT") throw e;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let config: Record<string, any> = {};
+  if (existingRaw.trim().length > 0) {
+    try {
+      config = JSON.parse(existingRaw);
+    } catch {
+      console.error(
+        `Refusing to write: existing ${target} is not valid JSON.\n` +
+          `Fix or back up the file manually, then re-run \`vibe-kanban install-mcp ${client}\`.`,
+      );
+      process.exit(3);
+    }
+    if (typeof config !== "object" || config === null || Array.isArray(config)) {
+      console.error(
+        `Refusing to write: existing ${target} is not a JSON object at top level.`,
+      );
+      process.exit(3);
+    }
+  }
+
+  // Set ONLY mcpServers["vibe-kanban"] — never touch other top-level keys or
+  // other mcpServers entries.
+  const mcpServers =
+    config.mcpServers && typeof config.mcpServers === "object"
+      ? config.mcpServers
+      : {};
+  mcpServers["vibe-kanban"] = {
+    command: "npx",
+    args: ["-y", "vibe-kanban", "mcp"],
+    env: { VIBE_BACKEND_URL: "http://127.0.0.1:8419" },
+  };
+  config.mcpServers = mcpServers;
+
+  // Atomic write: tmp file + rename. (rename is atomic on the same filesystem.)
+  const serialized = JSON.stringify(config, null, 2) + "\n";
+  const dir = path.dirname(target);
+  await fsp.mkdir(dir, { recursive: true });
+  const tmp = `${target}.tmp.${process.pid}`;
+  await fsp.writeFile(tmp, serialized, { mode: 0o600 });
+  await fsp.rename(tmp, target);
+  console.log(`Installed vibe-kanban MCP entry into ${target}`);
+}
+
 async function runMain(desktopMode: boolean): Promise<void> {
   checkForUpdates();
 
@@ -360,6 +444,22 @@ async function main(): Promise<void> {
     .allowUnknownOptions()
     .action((args: string[]) => {
       runOrExit(runRemote(args));
+    });
+
+  cli
+    .command("export [...args]", "Export workspace state as JSON or dotenv")
+    .allowUnknownOptions()
+    .action((args: string[]) => {
+      runOrExit(runExport(args));
+    });
+
+  cli
+    .command(
+      "install-mcp <client>",
+      "Install vibe-kanban MCP into a client config (claude|cursor)",
+    )
+    .action((client: string) => {
+      runOrExit(installMcp(client));
     });
 
   cli.help();

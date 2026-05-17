@@ -51,12 +51,114 @@ struct Cli {
 enum Command {
     /// Bring up, monitor, and tear down VK's cloud-mode docker stack (Phase 01.1, D-01).
     Remote(remote_cli::args::RemoteArgs),
+    /// Export workspace state as JSON or dotenv (D-09, D-15).
+    Export {
+        #[command(subcommand)]
+        action: ExportAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ExportAction {
+    /// Export a workspace by UUID or by --path (container_ref).
+    Workspace {
+        /// Workspace UUID (positional).
+        uuid: Option<String>,
+        /// Path to a directory inside the workspace (alternative to UUID).
+        #[arg(long)]
+        path: Option<String>,
+        /// Emit only KEY=VALUE lines from metadata (dotenv format) instead of JSON.
+        #[arg(long)]
+        env: bool,
+    },
 }
 
 async fn run_subcommand(command: Command) -> Result<(), VibeKanbanError> {
     match command {
         Command::Remote(args) => remote_cli::run(args).await.map_err(VibeKanbanError::from),
+        Command::Export { action } => match action {
+            ExportAction::Workspace { uuid, path, env } => {
+                export_workspace_cli(uuid, path, env).await
+            }
+        },
     }
+}
+
+/// Loopback CLI for the `/api/export/workspace` route (D-09, D-15). Resolves
+/// the running server's URL from BACKEND_PORT (default 8419 prod / 3000 debug
+/// to mirror `resolve_ports`), issues a single GET, and emits either
+/// pretty-printed JSON (default) or dotenv-style `KEY=VALUE` lines (`--env`).
+///
+/// Exit codes (D-15):
+///   0 — success
+///   1 — server unreachable / non-2xx (except 404)
+///   2 — caller-side argv error (handled by `process::exit(2)` in the match)
+///   4 — workspace not found (HTTP 404)
+async fn export_workspace_cli(
+    uuid: Option<String>,
+    path: Option<String>,
+    env_mode: bool,
+) -> Result<(), VibeKanbanError> {
+    let backend_port = std::env::var("BACKEND_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(if cfg!(debug_assertions) { 3000 } else { 8419 });
+    let base = format!("http://127.0.0.1:{}", backend_port);
+
+    let url = match (uuid, path) {
+        (Some(id), None) => format!("{base}/api/export/workspace/{id}"),
+        (None, Some(p)) => {
+            let canonical = std::fs::canonicalize(&p).map_err(|e| {
+                VibeKanbanError::Other(anyhow::anyhow!("Cannot canonicalize path {}: {}", p, e))
+            })?;
+            let encoded = urlencoding::encode(&canonical.to_string_lossy()).into_owned();
+            format!("{base}/api/export/workspace?container_ref={}", encoded)
+        }
+        (Some(_), Some(_)) => {
+            eprintln!("Provide either a UUID positional OR --path, not both.");
+            std::process::exit(2);
+        }
+        (None, None) => {
+            eprintln!("Provide a workspace UUID (positional) OR --path <dir>.");
+            std::process::exit(2);
+        }
+    };
+
+    let resp = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Server unreachable at {base}. Is `vibe-kanban` running?\n  ({e})");
+            std::process::exit(1);
+        }
+    };
+
+    if resp.status().as_u16() == 404 {
+        eprintln!("Workspace not found.");
+        std::process::exit(4);
+    }
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        eprintln!("Server returned {}: {}", status, body);
+        std::process::exit(1);
+    }
+
+    let payload: services::services::export::ExportPayload = resp.json().await.map_err(|e| {
+        VibeKanbanError::Other(anyhow::anyhow!("Failed to parse export payload: {}", e))
+    })?;
+
+    if env_mode {
+        for (k, v) in &payload.metadata {
+            println!("{}={}", k, v);
+        }
+    } else {
+        let json = serde_json::to_string_pretty(&payload).map_err(|e| {
+            VibeKanbanError::Other(anyhow::anyhow!("Failed to serialize payload: {}", e))
+        })?;
+        println!("{}", json);
+    }
+
+    Ok(())
 }
 
 /// Resolve `(host, backend_port, proxy_port)` from env vars with mode-aware
