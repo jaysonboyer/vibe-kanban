@@ -97,6 +97,19 @@ impl From<&'static str> for ApiError {
     }
 }
 
+impl From<services::services::export::ExportError> for ApiError {
+    fn from(err: services::services::export::ExportError) -> Self {
+        use services::services::export::ExportError;
+        match err {
+            ExportError::WorkspaceNotFound => {
+                ApiError::Workspace(WorkspaceError::WorkspaceNotFound)
+            }
+            ExportError::Database(e) => ApiError::Database(e),
+            ExportError::Workspace(e) => ApiError::Workspace(e),
+        }
+    }
+}
+
 impl From<RemoteClientNotConfigured> for ApiError {
     fn from(_: RemoteClientNotConfigured) -> Self {
         ApiError::BadRequest("Remote client not configured".to_string())
