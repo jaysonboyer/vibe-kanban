@@ -38,9 +38,17 @@ futures = "0.3"
 tokio = { workspace = true }
 globwalk = "0.9"
 portable-pty = "0.8"
+scopeguard = "1.2"
 
 [build-dependencies]
 dotenv = "0.15"
+
+[features]
+# Enables the VK_TEST_FAIL_AFTER_DB injection seam in LocalDeployment::new()
+# (gated by #[cfg(any(test, feature = "test-fault-injection"))]). Off by
+# default; downstream test crates opt in via dev-dependencies. Never present
+# in release builds.
+test-fault-injection = []
 
 [dev-dependencies]
 tempfile = "3.8"

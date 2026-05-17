@@ -15,6 +15,7 @@ use relay_control::{RelayControl, signing::RelaySigningService};
 use relay_hosts::RelayHosts;
 use relay_webrtc::WebRtcHost;
 use remote_info::RemoteInfo;
+use scopeguard::{ScopeGuard, guard};
 use services::services::{
     analytics::{AnalyticsConfig, AnalyticsContext, AnalyticsService, generate_user_id},
     approvals::Approvals,
@@ -136,7 +137,10 @@ impl Deployment for LocalDeployment {
         let events_msg_store = Arc::new(MsgStore::new());
         let events_entry_count = Arc::new(RwLock::new(0));
 
-        // Create DB with event hooks
+        // Create DB with event hooks.
+        // TODO(VKSTART-11): the event hook fires on every DB connection, which
+        // is observably hot under load. Cache hook state at the pool level
+        // (or move to per-statement instrumentation) in a follow-up phase.
         let db = {
             let hook = EventService::create_hook(
                 events_msg_store.clone(),
@@ -146,15 +150,48 @@ impl Deployment for LocalDeployment {
             DBService::new_with_after_connect(hook).await?
         };
 
+        // VKTEST-02b injection seam — forces a deterministic mid-init Err so
+        // the plan 01-09 integration test can exercise the scopeguard cleanup
+        // path. Gated behind #[cfg(any(test, feature = "test-fault-injection"))]
+        // so this code path is removed entirely from release builds.
+        #[cfg(any(test, feature = "test-fault-injection"))]
+        if std::env::var("VK_TEST_FAIL_AFTER_DB").is_ok() {
+            tracing::warn!(
+                "VK_TEST_FAIL_AFTER_DB set; forcing LocalDeployment::new Err for partial-init test"
+            );
+            return Err(DeploymentError::Other(anyhow::anyhow!(
+                "VK_TEST_FAIL_AFTER_DB injection fault"
+            )));
+        }
+
+        // VKSTART-07: wrap the DB pool in a scopeguard so any `?`-driven early
+        // return from this constructor closes the pool. Without this, the
+        // sqlite file lock leaks across re-init attempts (Tauri reopen,
+        // integration tests). Dismissed with `ScopeGuard::into_inner` at the
+        // end of `new()`.
+        let db_guard = guard(db.clone(), |db| {
+            tracing::warn!("LocalDeployment::new failed after DB acquired; closing pool");
+            let pool = db.pool.clone();
+            tokio::spawn(async move { pool.close().await });
+        });
+
         let file = FileService::new(db.clone().pool)?;
-        {
+        // VKSTART-10: gate the orphan-file cleanup behind a process-wide
+        // OnceLock so re-initialization (Tauri reopen, integration tests)
+        // does NOT spawn a second concurrent cleanup task.
+        static CLEANUP_STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if CLEANUP_STARTED.set(()).is_ok() {
             let file_service = file.clone();
             tokio::spawn(async move {
-                tracing::info!("Starting orphaned file cleanup...");
+                tracing::info!("Starting orphaned file cleanup (once per process)...");
                 if let Err(e) = file_service.delete_orphaned_files().await {
                     tracing::error!("Failed to clean up orphaned files: {}", e);
                 }
             });
+        } else {
+            tracing::debug!(
+                "Orphaned file cleanup already started by an earlier init in this process; skipping"
+            );
         }
 
         let approvals = Approvals::new();
@@ -206,7 +243,12 @@ impl Deployment for LocalDeployment {
         let oauth_handoffs = Arc::new(RwLock::new(HashMap::new()));
         let trusted_key_auth = TrustedKeyAuthRuntime::new(trusted_keys_path());
         let relay_signing = RelaySigningService::load_or_generate(&server_signing_key_path())
-            .expect("Failed to load or generate server signing key");
+            .map_err(|e| {
+                DeploymentError::Other(anyhow::anyhow!(
+                    "Failed to load or generate server signing key: {}",
+                    e
+                ))
+            })?;
         let relay_control = Arc::new(RelayControl::new());
         let client_info = ClientInfo::new();
         let preview_proxy = PreviewProxyService::new();
@@ -262,6 +304,16 @@ impl Deployment for LocalDeployment {
             let rc = remote_client.clone().ok();
             PrMonitorService::spawn(db, analytics, container, rc, pr_sync_notify.clone()).await;
         }
+        // Observability-only guard: PrMonitorService listens on the shutdown
+        // CancellationToken, so dropping it on early-return causes the task to
+        // exit naturally. This guard exists to log the failure path and as a
+        // hook for future explicit-handle cleanup if PrMonitorService later
+        // returns one.
+        let pr_monitor_guard = guard((), |_| {
+            tracing::warn!(
+                "LocalDeployment::new failed after pr_monitor spawned; shutdown token drop will stop the task"
+            );
+        });
 
         let deployment = Self {
             config,
@@ -294,6 +346,11 @@ impl Deployment for LocalDeployment {
             pty,
             pr_sync_notify,
         };
+
+        // All init steps succeeded — dismiss the scopeguards so their cleanup
+        // does NOT run on the success path.
+        let _db = ScopeGuard::into_inner(db_guard);
+        let _pr_monitor = ScopeGuard::into_inner(pr_monitor_guard);
 
         Ok(deployment)
     }

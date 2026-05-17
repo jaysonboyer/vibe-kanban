@@ -4982,6 +4982,7 @@ dependencies = [
  "relay-webrtc",
  "remote-info",
  "russh",
+ "scopeguard",
  "serde",
  "serde_json",
  "services",
