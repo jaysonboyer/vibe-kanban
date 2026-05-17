@@ -72,3 +72,45 @@ The server is not auto-started by the CLI. Run `vibe-kanban` first in another te
 ## Schema versioning
 
 The `$schema` field declares the payload version. Breaking changes will ship as a new endpoint path (`/api/export/v2/workspace/...`) with a bumped `$schema` value. `vk-export/v1` is supported for at least one deprecation window.
+
+## Driving sandbox inputs
+
+The `developer-sandbox` CLI (`sandbox init-workspace`) takes its config as
+generic CLI flags / env vars / config file (see its
+[migration guide](https://github.com/trustradius/developer-sandbox/blob/main/docs/migration-from-vk-coupling.md)).
+The export contract above is the canonical glue — VK emits the dotenv form,
+sandbox reads it. Recipes:
+
+### One-shot dotenv
+
+```bash
+# Inside the workspace dir
+vibe-kanban export workspace --path . --env > .sandbox/workspace.env
+set -a; source .sandbox/workspace.env; set +a
+sandbox init-workspace
+```
+
+`--env` emits only the keys parsed from the task description's ` ```env `
+block — `FEATURE=...`, `SERVICES=...`, `JIRA_ID=...`, etc. — so the sourced
+environment lines up exactly with sandbox's `SANDBOX_*` resolution chain.
+
+### Committable JSON config
+
+```bash
+vibe-kanban export workspace --path . | \
+    jq '{feature: .metadata.FEATURE, services: .metadata.SERVICES, jira_id: .metadata.JIRA_ID}' \
+    > .sandbox/workspace.json
+sandbox init-workspace
+```
+
+Sandbox's `_resolve_inputs` reads
+`<workspace>/.sandbox/workspace.json` automatically.
+
+### Soft hook
+
+When `vibe-kanban` is on the developer's PATH, `sandbox up` and
+`sandbox down` invoke `vibe-kanban remote up` and `vibe-kanban remote
+down` automatically (opt out with `--no-vk` or
+`SANDBOX_VK_AUTOSTART=0`). No glue script needed for the lifecycle —
+only the workspace-input glue above when you want VK metadata to
+populate `FEATURE`/`SERVICES`/etc.
